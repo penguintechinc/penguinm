@@ -3,26 +3,44 @@ default_stages: [pre-commit]
 
 repos:
   # ── Hygiene ────────────────────────────────────────────────────────────────
+  # stages: [pre-commit] is explicit on every hook below, not left to
+  # default_stages -- observed in practice (a real `git push`, then
+  # `pre-commit run --hook-stage pre-push --all-files`) that several of these
+  # hooks' own upstream manifests carry a stage default that overrides the
+  # top-level default_stages, so trailing-whitespace/end-of-file-fixer/
+  # check-added-large-files/check-executables-have-shebangs re-ran (and
+  # auto-fixed files) during `git push`. Explicit per-hook stages is the only
+  # reliable fix.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: check-case-conflict
+        stages: [pre-commit]
       - id: check-added-large-files
         args: [--maxkb=2048]
+        stages: [pre-commit]
       - id: check-yaml
         args: [--allow-multiple-documents]
+        stages: [pre-commit]
       - id: check-json
+        stages: [pre-commit]
       - id: check-executables-have-shebangs
+        stages: [pre-commit]
       - id: detect-private-key
+        stages: [pre-commit]
 
   # ── Secrets (mandatory, every repo) ────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
       - id: gitleaks
+        stages: [pre-commit]
 
   # ── Shell (Bash must stay 3.2-compatible — see general.md) ─────────────────
   - repo: https://github.com/koalaman/shellcheck-precommit
@@ -30,6 +48,7 @@ repos:
     hooks:
       - id: shellcheck
         args: [--severity=warning]
+        stages: [pre-commit]
 
   # ── Dockerfiles (Gazer toolchain image) ─────────────────────────────────────
   # --failure-threshold error: the imported gazer/Dockerfile carries pre-existing
@@ -43,12 +62,14 @@ repos:
     hooks:
       - id: hadolint-docker
         args: [--failure-threshold=error]
+        stages: [pre-commit]
 
   # ── GitHub Actions ─────────────────────────────────────────────────────────
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.4
     hooks:
       - id: actionlint
+        stages: [pre-commit]
 
   # ── Dockerfile rootless check ────────────────────────────────────────────────
   - repo: local
