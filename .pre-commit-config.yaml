@@ -52,3 +52,14 @@ repos:
         language: script
         files: (^|/)Dockerfile[^/]*$
         stages: [pre-push]
+
+  # ── Gazer (Flutter) — runs inside the gazer-toolchain container, never on the host ──
+  - repo: local
+    hooks:
+      - id: gazer-lint
+        name: Gazer Flutter lint (flutter analyze + dart format + ktlint)
+        entry: bash -c 'make mobile-lint'
+        language: system
+        files: ^gazer/.*\.(dart|kt|kts)$
+        pass_filenames: false
+        stages: [pre-push]

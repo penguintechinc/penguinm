@@ -10,3 +10,151 @@ verify-hooks:
 
 ## Full local dev environment setup
 setup: install-hooks
+# Gazer Mobile 2.0 (gazer/) -- every target below runs inside the gazer-toolchain
+# image, never on the host. Host Flutter is never invoked directly; see
+# docs/superpowers/specs/2026-09-07-gazer-mobile-v2-design.md Toolchain, CI, Versioning.
+.PHONY: mobile-toolchain mobile-run mobile-lint mobile-test mobile-test-android mobile-build mobile-build-signed mobile-security mobile-codegen mobile-clean mobile-test-integration mobile-screenshots seed-mock-data-mobile mobile-telemetry-check
+# mobile-test-integration is added later by Task 21; mobile-screenshots and
+# seed-mock-data-mobile are added later by Task 26 -- pre-declared phony here
+# (harmless before those targets exist) so the whole mobile-* target set is
+# uniformly a .PHONY gate from the very first commit.
+
+MOBILE_IMAGE := gazer-toolchain:3.47.2
+# MOBILE_RUN_EXTRA_ARGS is empty by default; mobile-build-signed sets it (target-specific
+# variable, below) to pass -e GAZER_REQUIRE_SIGNING=1 to the container. It must land BEFORE
+# $(MOBILE_IMAGE) -- docker run only parses flags preceding the image argument -- so MOBILE_RUN
+# is `=` (recursive, re-expanded per use) rather than `:=`, and the hook sits ahead of `-w /work`.
+MOBILE_RUN_EXTRA_ARGS ?=
+MOBILE_RUN = docker run --rm --user $(shell id -u):$(shell id -g) \
+	-v $(CURDIR)/gazer:/work \
+	-v gazer-pub-cache:/home/appuser/.pub-cache \
+	-v gazer-gradle:/home/appuser/.gradle \
+	$(MOBILE_RUN_EXTRA_ARGS) -w /work $(MOBILE_IMAGE)
+
+mobile-toolchain:
+	docker build -t $(MOBILE_IMAGE) gazer
+
+mobile-run:
+	@test -n "$(CMD)" || { echo "usage: make mobile-run CMD=\"<command>\"" >&2; exit 1; }
+# Minor 7 (final-review-platform.md): CMD is embedded into a double-quoted shell string, so a
+# double quote inside CMD (e.g. CMD='echo "hi"') broke out of it. Single-quoting the outer
+# `bash -lc` argument fixes that exact reported case; CMD is still not fully quote-safe for every
+# possible character (a literal single quote in CMD would now break it instead), which would
+# require a more invasive rework of the make/shell quoting boundary -- out of scope here.
+	$(MOBILE_RUN) bash -lc '$(CMD)'
+
+mobile-lint:
+# Minor 1 (final-review-platform.md): `if [ -d android ]` was a vacuous-pass shape (a wrong mount
+# silently skips ktlint/lint instead of failing). `test -d android` as a hard precondition keeps
+# the guard the plan's Task 26 Step 14 requires, but turns a missing android/ directory into a
+# loud failure instead of a silent skip.
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; flutter analyze; dart format --set-exit-if-changed .; test -d android; cd android && ./gradlew ktlintCheck lint"
+
+# I6 (final-review-platform.md): coverage_gate_selftest.sh was the only artifact proving the
+# coverage gate can fail on purpose, and nothing ran it -- runs first so a broken gate mechanism
+# fails loudly before real coverage data is even collected.
+# I7 (final-review-platform.md): coverage_gate.sh's 4th arg is the on-disk lib/ root; the gate
+# now asserts every hand-written (non-generated) .dart file under it produced at least one SF:
+# record, catching a hand-written file that `flutter test --coverage` never touched at all
+# (invisible to the raw percentage, since flutter only reports files a test actually loaded).
+mobile-test:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; bash scripts/coverage_gate_selftest.sh; flutter test --coverage --dart-define=GAZER_SEED=true; bash scripts/coverage_gate.sh 90 coverage/lcov.info lcov lib"
+
+mobile-test-android:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; cd android && ./gradlew testDebugUnitTest jacocoTestReport && cd .. && bash scripts/coverage_gate.sh 90 android/app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml jacoco"
+
+mobile-test-integration: ## Boot the container-hosted Android emulator (needs /dev/kvm) and run integration_test/ + connectedDebugAndroidTest
+	@test -e /dev/kvm || { echo "ERROR: /dev/kvm not present - integration tests require KVM. Check 'ls -l /dev/kvm' and that your user is in the kvm group; GitHub Actions ubuntu-latest runners enable it via udev rules (see the integration CI job)."; exit 1; }
+# --group-add is load-bearing: the host's access to /dev/kvm usually comes from a
+# POSIX ACL (the `+` in `crw-rw----+`), and `docker run --device` recreates the node
+# with the host's uid/gid/mode but WITHOUT its ACLs -- so the container's appuser
+# (uid 1000) would see a root:kvm 0660 node it cannot open, and the emulator would
+# silently fall back to (or fail on) software virtualisation. Adding the device
+# node's own gid as a supplementary group restores rw access portably, without
+# depending on the `kvm` group having the same gid on every host.
+	docker run --rm \
+		--device /dev/kvm \
+		--group-add "$$(stat -c '%g' /dev/kvm)" \
+		--network host \
+		--user $(shell id -u):$(shell id -g) \
+		-v $(PWD)/gazer:/work \
+		-v gazer-pub-cache:/home/appuser/.pub-cache \
+		-v gazer-gradle:/home/appuser/.gradle \
+		-w /work \
+		$(MOBILE_IMAGE) \
+		bash scripts/run_integration_test.sh
+
+mobile-build:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; flutter build apk --split-per-abi --obfuscate --split-debug-info=build/symbols; flutter build appbundle --obfuscate --split-debug-info=build/symbols"
+
+mobile-build-signed: MOBILE_RUN_EXTRA_ARGS := -e GAZER_REQUIRE_SIGNING=1
+mobile-build-signed:
+	@test -f gazer/android/key.properties || { echo "mobile-build-signed requires gazer/android/key.properties -- see docs/superpowers/plans/2026-09-07-gazer-mobile-v2-m1.md Task 25 Step 4 (one-time keystore procedure) or Step 8c (throwaway local keystore for testing)" >&2; exit 1; }
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; flutter build apk --split-per-abi --obfuscate --split-debug-info=build/symbols; flutter build appbundle --obfuscate --split-debug-info=build/symbols"
+
+# Gates on android/app/gradle.lockfile, which locks only the classpaths :app actually ships
+# (controller ruling R23) -- osv-scanner never sees build-tooling-only dependencies (AGP's
+# Unified Test Platform, ktlint, kotlin compiler tooling), which this project cannot meaningfully
+# remediate and which never reach a device. R23 Step 3 also asked for a non-gating advisory scan
+# of the FULL dependency graph (all configurations, tooling included) alongside this gate.
+# Omitted: Gradle's dependency-locking writer has no supported option to target a lockfile path
+# other than the project's own gradle.lockfile, so a second full-graph scan would require either
+# repeatedly toggling lockAllConfigurations() on and off across separate ./gradlew invocations (a
+# multi-minute round trip on every `make mobile-security`, and disruptive to the real,
+# shipped-classpath lockfile this target gates on) or a bespoke Gradle init script/plugin to
+# redirect the lock output -- both too invasive to add reliably within this task. Noted here per
+# R23's explicit escape hatch rather than left unexplained.
+# I9 (final-review-platform.md): --config auto stays (vendoring a pinned rules directory is
+# deferred to M2, see README.md tooling notes). The ruling asked to also add --metrics=off, but
+# semgrep 1.176.1 hard-refuses that combination ("Cannot create auto config when metrics are off.
+# Please allow metrics or run with a specific config." -- verified interactively), so --metrics=on
+# is explicit instead (same behavior semgrep already defaults to for a registry-backed --config,
+# just no longer implicit) -- the binary version itself is pinned in the Dockerfile
+# (SEMGREP_VERSION). Disabling metrics requires the M2 vendored/pinned ruleset.
+mobile-security:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; bash scripts/osv_scan_assert.sh pubspec.lock; bash scripts/osv_scan_assert.sh android/app/gradle.lockfile; semgrep --config auto --metrics=on --error .; gitleaks detect --source . --no-git -v"
+
+mobile-codegen:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; dart run pigeon --input pigeons/pipeline.dart; dart run build_runner build --delete-conflicting-outputs; flutter gen-l10n"
+
+# Minor 1 (final-review-platform.md): see mobile-lint above -- test -d android turns a missing
+# android/ directory into a loud failure instead of a silent skip.
+mobile-clean:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; flutter clean; test -d android; cd android && ./gradlew clean"
+
+# OpenTelemetry emission gate (Task 27): runs ONLY the local-OTLP-sink test
+# and greps its printed "telemetry sink received: ..." line for four
+# non-zero counts. set -euo pipefail means a test failure already aborts
+# before the grep runs; the grep is the second, independent check the
+# house Verification Integrity rule requires -- it fails the build if the
+# counts line is somehow missing or shows a zero, not just if the test
+# framework's own exit code says pass.
+mobile-telemetry-check:
+	$(MOBILE_RUN) bash -lc "set -euo pipefail; flutter test test/telemetry/otlp_sink_test.dart 2>&1 | tee /tmp/gazer-telemetry-check.log; grep -E 'telemetry sink received: logs=[1-9][0-9]* metrics=[1-9][0-9]* histograms=[1-9][0-9]* spans=[1-9][0-9]*' /tmp/gazer-telemetry-check.log"
+
+seed-mock-data-mobile: ## Launch Gazer with the mock target/quality preset seeded (debug only; needs an already-running emulator/device - interactive, not CI-safe/headless)
+	@echo "NOTE: attaches to whatever device/emulator is already running - start one first (e.g. run gazer/scripts/run_integration_test.sh's boot steps by hand, or launch an AVD from Android Studio). This cannot run headless or in CI; make mobile-test-integration already covers automated seeded coverage via --dart-define."
+	docker run --rm -it \
+		--network host \
+		--user $(shell id -u):$(shell id -g) \
+		-v $(PWD)/gazer:/work \
+		-v gazer-pub-cache:/home/appuser/.pub-cache \
+		-v gazer-gradle:/home/appuser/.gradle \
+		-w /work \
+		$(MOBILE_IMAGE) \
+		bash -lc "set -euo pipefail; flutter build apk --debug --dart-define=GAZER_SEED=true; flutter run --use-application-binary=build/app/outputs/flutter-apk/app-debug.apk --dart-define=GAZER_SEED=true"
+
+mobile-screenshots: ## Capture the docs/screenshots/gazer/ marketing set from seeded phone + tablet emulators (needs /dev/kvm)
+	@test -e /dev/kvm || { echo "ERROR: /dev/kvm not present - screenshot capture requires KVM"; exit 1; }
+	docker run --rm \
+		--device /dev/kvm \
+		--group-add "$(shell stat -c '%g' /dev/kvm)" \
+		--network host \
+		--user $(shell id -u):$(shell id -g) \
+		-v $(PWD)/gazer:/work \
+		-v gazer-pub-cache:/home/appuser/.pub-cache \
+		-v gazer-gradle:/home/appuser/.gradle \
+		-w /work \
+		$(MOBILE_IMAGE) \
+		bash scripts/mobile_screenshots_entrypoint.sh
+	bash gazer/scripts/collect_screenshots.sh
