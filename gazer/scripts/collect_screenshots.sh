@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Runs on the HOST (not in the container - the toolchain container only
-# mounts mobile/gazer/, not the repo root, so it cannot write into
+# mounts gazer/, not the repo root, so it cannot write into
 # docs/screenshots/ itself). Copies the fixed-name marketing screenshot
-# set from mobile/gazer/build/integration_screenshots/ into
+# set from gazer/build/integration_screenshots/ into
 # docs/screenshots/gazer/ at the repo root.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-SRC_DIR="$REPO_ROOT/mobile/gazer/build/integration_screenshots"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SRC_DIR="$REPO_ROOT/gazer/build/integration_screenshots"
 DEST_DIR="$REPO_ROOT/docs/screenshots/gazer"
 
 # Five distinct screens, not five files. Ruling R42 replaced

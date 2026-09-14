@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
 # Gazer Mobile 2.0 toolchain image. Every mobile-* make target in the
-# repo-root Makefile runs inside this image -- nothing in mobile/gazer is
+# repo-root Makefile runs inside this image -- nothing in gazer/ is
 # ever built, linted, tested, or packaged with the host's Flutter/Android
 # SDK. Single stage: this image ships no runtime app of its own, it *is*
 # the build tool, so there is no separate "runtime" half to split into a
@@ -9,8 +9,8 @@
 FROM ubuntu@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
 
 LABEL org.opencontainers.image.title="gazer-toolchain" \
-      org.opencontainers.image.description="Flutter 3.47.2 + Android SDK 36 + Temurin 17 toolchain for mobile/gazer" \
-      org.opencontainers.image.source="https://github.com/penguintechinc/waddlebot"
+      org.opencontainers.image.description="Flutter 3.47.2 + Android SDK 36 + Temurin 17 toolchain for gazer/" \
+      org.opencontainers.image.source="https://github.com/penguintechinc/penguinm"
 
 ARG DEBIAN_FRONTEND=noninteractive
 

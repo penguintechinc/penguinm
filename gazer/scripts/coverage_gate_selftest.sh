@@ -15,7 +15,7 @@
 #       blanket-disable the check: a non-allowlisted absentee alongside an
 #       allowlisted one still fails, and is named in the failure output.
 #
-# This never touches the real coverage/lcov.info or the real mobile/gazer/lib
+# This never touches the real coverage/lcov.info or the real gazer/lib
 # -- it is pure fixture data written to a scratch directory, cleaned up on
 # exit.
 set -euo pipefail

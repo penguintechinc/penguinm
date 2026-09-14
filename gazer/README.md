@@ -1,4 +1,4 @@
-# Gazer (mobile/gazer)
+# Gazer (gazer/)
 
 Live-streaming client for Android phones and tablets. Streams the device's
 back or front camera to an RTMP endpoint (H.264 + AAC, adaptive bitrate,
@@ -78,7 +78,7 @@ emulator/device:
 
 ```
 make mobile-run CMD="flutter build apk --debug"
-adb install -r mobile/gazer/build/app/outputs/flutter-apk/app-debug.apk
+adb install -r gazer/build/app/outputs/flutter-apk/app-debug.apk
 ```
 
 ## Device matrix (M1 — phone camera only)
