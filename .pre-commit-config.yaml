@@ -87,7 +87,7 @@ repos:
     hooks:
       - id: trivy-fs
         name: trivy fs --scanners vuln,misconfig,secret --exit-code 1
-        entry: trivy fs --scanners vuln,misconfig,secret --exit-code 1 .
+        entry: trivy fs --scanners vuln,misconfig,secret --exit-code 1 --skip-dirs .superpowers --skip-dirs "**/coverage" --skip-dirs "**/.dart_tool" --skip-dirs "**/build" .
         language: system
         pass_filenames: false
         always_run: true
@@ -102,8 +102,10 @@ repos:
         stages: [pre-push]
 
       - id: semgrep
-        name: semgrep --config p/dart --config p/kotlin --config p/secrets --error
-        entry: semgrep --config p/dart --config p/kotlin --config p/secrets --error .
+        name: semgrep --config p/security-audit --config p/kotlin --config p/secrets --error
+        # uvx runs the requirements.txt-pinned semgrep isolated (the host global semgrep
+        # has a broken opentelemetry-sdk); p/dart is not a real ruleset (404) → p/security-audit.
+        entry: uvx semgrep@1.177.0 --config p/security-audit --config p/kotlin --config p/secrets --error --exclude .superpowers .
         language: system
         pass_filenames: false
         always_run: true
