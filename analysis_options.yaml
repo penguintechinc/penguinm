@@ -1,0 +1,8 @@
+include: package:penguin_lints/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'
+    - 'templates/**'
+    - '.worktrees/**'

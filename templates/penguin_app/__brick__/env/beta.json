@@ -1,0 +1,11 @@
+{
+  "PENGUIN_ENV": "beta",
+  "API_BASE_URL": "https://api.{{product_key}}.penguintech.cloud",
+  "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.penguintech.cloud:4318",
+  "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+  "POSTHOG_HOST": "https://posthog.penguintech.cloud",
+  "POSTHOG_PROJECT_KEY": "phc_beta",
+  "LICENSE_SERVER_URL": "https://license.penguintech.io",
+  "OAUTH_CLIENT_ID": "{{org}}.{{name}}.beta",
+  "OAUTH_REDIRECT_URI": "{{org}}.{{name}}.beta://oauth/callback"
+}

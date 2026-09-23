@@ -1,0 +1,9 @@
+name: penguin_lints
+description: Shared analysis_options.yaml for every penguinm workspace member.
+publish_to: none
+resolution: workspace
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+dependencies:
+  flutter_lints: 6.0.0

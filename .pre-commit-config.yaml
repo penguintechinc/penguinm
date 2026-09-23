@@ -1,0 +1,110 @@
+# PenguinTech pre-commit configuration for penguinm.
+#
+# Mechanism: the `pre-commit` framework (never hand-written git hooks) — see
+# the setup-git-hooks skill. install/verify: tooling/scripts/install-pre-commit.sh.
+#
+# Most tool-specific hooks below run via `language: system`, invoking the
+# already-pinned toolchain (Flutter 3.44.8, gitleaks, shellcheck, hadolint,
+# zizmor, trivy, osv-scanner, semgrep — versions pinned in
+# tooling/docker/Dockerfile.flutter-android and .github/workflows/security.yml,
+# asserted by tooling/scripts/check-pins.sh) rather than pre-commit's own
+# per-hook environment management (golang/docker builds for
+# gitleaks/osv-scanner/shellcheck are slow and would duplicate CI's pinning).
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  # ── Hygiene (pure Python, no external tool needed) ──────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        # mason brick templates hold mustache placeholders ({{name}}), not valid YAML
+        exclude: ^templates/[^/]+/__brick__/
+      - id: check-json
+        # mason brick templates hold mustache placeholders, not valid JSON
+        exclude: ^templates/[^/]+/__brick__/
+      - id: check-executables-have-shebangs
+      - id: detect-private-key
+
+  # ── Secrets, shell, Dart/Flutter, workflows, Dockerfile (pre-commit) ────
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks protect --staged --redact
+        entry: gitleaks protect --staged --redact
+        language: system
+        pass_filenames: false
+
+      - id: shellcheck
+        name: shellcheck (staged shell scripts)
+        entry: shellcheck --severity=warning
+        language: system
+        types: [shell]
+
+      - id: dart-format
+        name: dart format --set-exit-if-changed (staged .dart files)
+        entry: dart format --set-exit-if-changed
+        language: system
+        files: \.dart$
+        exclude: ^\.dart_tool/
+
+      - id: flutter-analyze
+        name: flutter analyze --fatal-infos (packages affected by staged .dart files)
+        entry: >-
+          bash -c 'set -euo pipefail; dirs=""; for f in "$@"; do
+          d=$(dirname "$f"); while [ "$d" != "." ] && [ ! -f "$d/pubspec.yaml" ]; do
+          d=$(dirname "$d"); done; if [ -f "$d/pubspec.yaml" ]; then case " $dirs " in
+          *" $d "*) ;; *) dirs="$dirs $d";; esac; fi; done; for d in $dirs; do
+          echo "flutter analyze: $d"; (cd "$d" && flutter analyze --fatal-infos); done' --
+        language: system
+        files: \.dart$
+        exclude: ^\.dart_tool/
+
+      - id: zizmor
+        name: zizmor .github/workflows
+        entry: zizmor .github/workflows
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: false
+
+      - id: hadolint-flutter-android
+        name: hadolint tooling/docker/Dockerfile.flutter-android
+        entry: hadolint --config .hadolint.yaml tooling/docker/Dockerfile.flutter-android
+        language: system
+        files: ^tooling/docker/Dockerfile\.flutter-android$
+        pass_filenames: false
+
+  # ── Security scans (pre-push — heavier, keeps commits fast) ─────────────
+  - repo: local
+    hooks:
+      - id: trivy-fs
+        name: trivy fs --scanners vuln,misconfig,secret --exit-code 1
+        entry: trivy fs --scanners vuln,misconfig,secret --exit-code 1 .
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: osv-scanner
+        name: osv-scanner --lockfile pubspec.lock
+        entry: osv-scanner --lockfile pubspec.lock
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: semgrep
+        name: semgrep --config p/dart --config p/kotlin --config p/secrets --error
+        entry: semgrep --config p/dart --config p/kotlin --config p/secrets --error .
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

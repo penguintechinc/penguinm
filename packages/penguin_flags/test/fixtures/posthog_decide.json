@@ -1,0 +1,8 @@
+{
+  "featureFlags": {
+    "penguinm.springboard": true,
+    "penguinm.analytics": false,
+    "penguinm.advanced_search": "variant-a"
+  },
+  "featureFlagPayloads": {}
+}

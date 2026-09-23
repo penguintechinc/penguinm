@@ -1,0 +1,51 @@
+name: penguinm_workspace
+description: PenguinTech mobile monorepo (Flutter). Not published.
+publish_to: none
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+workspace:
+  - packages/penguin_lints
+  - packages/penguin_core
+  - packages/penguin_api
+  - packages/penguin_auth
+  - packages/penguin_telemetry
+  - packages/penguin_flags
+  - packages/penguin_offline
+  - packages/penguin_update
+  - packages/penguin_ui
+  - packages/penguin_testing
+  - packages/flutter_libs
+  - packages/flutter_libs/example
+  - shells/penguin_app_shell
+  - tooling/otlp_sink
+  - apps/penguin_reference
+  - apps/penguincloud
+dev_dependencies:
+  melos: 8.7.0
+# melos 8.7.0 reads scripts/command/repository from this `melos:` key (not a
+# standalone melos.yaml — that file is not read at all by melos >=7.0, which
+# gets package discovery from the native `workspace:` list above instead).
+# Verified against melos-8.7.0/lib/src/workspace_config.dart; see
+# task-T1a-report.md self-review findings.
+melos:
+  repository: https://github.com/penguintechinc/penguinm
+  # Disable melos's IntelliJ *.iml generation (on by default —
+  # melos-8.7.0/lib/src/workspace_config.dart IntelliJConfig._defaultEnabled
+  # = true) — we don't want generated files outside .dart_tool, even
+  # gitignored ones.
+  ide:
+    intellij:
+      enabled: false
+  command:
+    bootstrap:
+      runPubGetInParallel: false
+  scripts:
+    analyze:
+      run: melos exec -c 1 -- flutter analyze --fatal-infos
+      description: analyze every package
+    format:
+      run: dart format --set-exit-if-changed .
+    test:
+      run: melos exec -c 4 --dir-exists=test -- flutter test --coverage --timeout=60s --reporter=compact
+    build:android:
+      run: melos exec --scope='apps/*' -- flutter build apk --debug --flavor dev --dart-define-from-file=env/dev.json

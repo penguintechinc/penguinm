@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- dev flavor only: allow cleartext (http://) traffic for the local/emulator
+         loopback backend named in env/dev.json. beta and prod stay HTTPS-only and must
+         never set this — see client.md TLS requirements and spec §13. -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

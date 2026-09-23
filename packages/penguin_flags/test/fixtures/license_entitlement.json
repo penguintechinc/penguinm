@@ -1,0 +1,8 @@
+{
+  "tier": "professional",
+  "expiresAt": "2026-12-31T23:59:59Z",
+  "features": {
+    "whitelabelling": true,
+    "google_oauth": true
+  }
+}

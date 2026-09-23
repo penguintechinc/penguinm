@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - release/**
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dart:
+    name: dart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter 3.44.8
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+
+      - name: melos bootstrap
+        run: dart run melos bootstrap
+
+      - name: dart format --set-exit-if-changed
+        run: dart format --set-exit-if-changed .
+
+      - name: flutter analyze (zero infos/warnings)
+        run: dart run melos run analyze
+
+      - name: melos run test (coverage per package)
+        run: dart run melos run test
+
+      - name: coverage-gate
+        run: tooling/scripts/coverage-gate.sh
+
+      - name: telemetry-validate
+        run: tooling/scripts/telemetry-validate.sh
+
+      - name: check-logging
+        run: tooling/scripts/check-logging.sh
+
+      - name: check-pins
+        run: tooling/scripts/check-pins.sh
+
+  android:
+    name: android (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    # UID 1001:GID 0 matches the GitHub-hosted runner's ownership of
+    # $GITHUB_WORKSPACE (uid 1001); T8 makes the image's /opt/flutter,
+    # Android SDK dir, and appuser (uid 1000) home group-0 writable, so
+    # 1001:0 can build without --user root. First CI run against the
+    # T8-updated image is the validation of this pairing (R21).
+    container:
+      image: ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8 # TODO-PIN: replace tag with digest after first toolchain-image publish (T29)
+      options: --user 1001:0
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - penguin_reference
+          - penguincloud
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mark workspace safe for git (container runs as non-checkout UID)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: flutter build apk --debug --flavor dev
+        working-directory: apps/${{ matrix.app }}
+        run: flutter build apk --debug --flavor dev --dart-define-from-file=env/dev.json
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.app }}-debug-apk
+          path: apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-dev-debug.apk
+          retention-days: 14

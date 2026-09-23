@@ -1,0 +1,24 @@
+# gitleaks configuration for penguinm.
+#
+# Extends the default ruleset. The ONLY allowlist entry is for known fake
+# tokens in secret-REDACTION test fixtures: those tests assert that the
+# telemetry/log-sanitizer code redacts secrets, so they must feed it
+# realistic-looking fake tokens as input. The allowlist is scoped by BOTH the
+# exact test file AND the exact fake value (condition = "AND"), so a real
+# secret in any other file — or any other value in these files — still fails.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake tokens in secret-redaction test fixtures (telemetry meter/span, log sanitizer)"
+condition = "AND"
+paths = [
+  '''packages/penguin_telemetry/test/meter_test\.dart$''',
+  '''packages/penguin_telemetry/test/span_test\.dart$''',
+  '''packages/penguin_core/test/log_sanitizer_test\.dart$''',
+]
+regexes = [
+  '''abcd12345678''',
+  '''abcd1234wxyz''',
+  '''abc123def456''',
+]

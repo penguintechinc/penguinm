@@ -1,0 +1,23 @@
+name: penguin_api
+description: PenguinApiClient (package:http) with auth/retry/trace middleware, shared by every penguinm app.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: 3.4.3
+  http: 1.6.0
+  penguin_core:
+    path: ../penguin_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: 1.0.5
+  penguin_lints:
+    path: ../penguin_lints

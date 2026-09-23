@@ -1,0 +1,19 @@
+name: flutter_libs_example
+description: Example app demonstrating flutter_libs components.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_libs:
+    path: ../
+
+dev_dependencies:
+  penguin_lints:
+    path: ../../penguin_lints
