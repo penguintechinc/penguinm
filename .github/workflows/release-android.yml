@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   release:
-    name: release (${{ matrix.app }})
+    name: release (${{ github.event.release.tag_name }})
     runs-on: ubuntu-latest
     # UID 1001:GID 0 matches the GitHub-hosted runner's ownership of
     # $GITHUB_WORKSPACE (uid 1001); T8 makes the image's /opt/flutter,
@@ -25,12 +25,6 @@ jobs:
     permissions:
       contents: write
       packages: read
-    strategy:
-      fail-fast: false
-      matrix:
-        app:
-          - penguin_reference
-          - penguincloud
     env:
       PENGUIN_ANDROID_KEYSTORE_B64: ${{ secrets.PENGUIN_ANDROID_KEYSTORE_B64 }}
       PENGUIN_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.PENGUIN_ANDROID_KEYSTORE_PASSWORD }}
@@ -45,6 +39,45 @@ jobs:
 
       - name: Mark workspace safe for git (container runs as non-checkout UID)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Parse and validate release tag (<app>/vX.Y.Z)
+        id: tag
+        # Each app releases, versions, and branches independently — the
+        # release tag names exactly one app and this job builds only that
+        # app (no matrix). RELEASE_TAG is passed via env, never
+        # interpolated directly into the script, since a release tag name
+        # is attacker-influenced input.
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+
+          # Known apps — add new apps here as they're scaffolded.
+          # apps/gazer is excluded until its integration lands (see
+          # docs/RELEASE.md).
+          known_apps="penguin_reference penguincloud"
+
+          if [[ ! "$tag" =~ ^([^/]+)/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release-android: FAIL - tag '$tag' does not match '<app>/vX.Y.Z'" >&2
+            exit 1
+          fi
+          app="${BASH_REMATCH[1]}"
+
+          known=0
+          for a in $known_apps; do
+            if [ "$a" = "$app" ]; then
+              known=1
+              break
+            fi
+          done
+          if [ "$known" -ne 1 ]; then
+            echo "release-android: FAIL - tag '$tag' names unknown app '$app' (known: $known_apps)" >&2
+            exit 1
+          fi
+
+          echo "release-android: tag '$tag' -> app '$app'"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
 
       - name: Verify required secrets are present
         run: |
@@ -62,19 +95,23 @@ jobs:
           echo "release-android: all required secrets present"
 
       - name: Decode signing keystore
+        env:
+          APP: ${{ steps.tag.outputs.app }}
         run: |
           set -euo pipefail
-          keystore_path="${RUNNER_TEMP}/penguin-release-${{ matrix.app }}.keystore"
+          keystore_path="${RUNNER_TEMP}/penguin-release-${APP}.keystore"
           echo "$PENGUIN_ANDROID_KEYSTORE_B64" | base64 -d > "$keystore_path"
           echo "PENGUIN_ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
 
       - name: Build signed App Bundle (prod flavor)
-        working-directory: apps/${{ matrix.app }}
+        working-directory: apps/${{ steps.tag.outputs.app }}
         run: flutter build appbundle --release --flavor prod --dart-define-from-file=env/prod.json --obfuscate --split-debug-info=build/symbols
 
       - name: Locate build output
         id: artifact
-        working-directory: apps/${{ matrix.app }}
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        env:
+          APP: ${{ steps.tag.outputs.app }}
         run: |
           set -euo pipefail
           aab_path="build/app/outputs/bundle/prodRelease/app-prod-release.aab"
@@ -82,12 +119,12 @@ jobs:
             echo "release-android: FAIL - expected AAB not found at $aab_path" >&2
             exit 1
           fi
-          echo "path=apps/${{ matrix.app }}/$aab_path" >> "$GITHUB_OUTPUT"
+          echo "path=apps/${APP}/$aab_path" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.app }}-release-aab
+          name: ${{ steps.tag.outputs.app }}-release-aab
           path: ${{ steps.artifact.outputs.path }}
           retention-days: 90
 
@@ -104,7 +141,7 @@ jobs:
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PENGUIN_PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: io.penguintech.${{ matrix.app }}
+          packageName: io.penguintech.${{ steps.tag.outputs.app }}
           releaseFiles: ${{ steps.artifact.outputs.path }}
           track: internal
           status: completed
@@ -114,7 +151,7 @@ jobs:
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PENGUIN_PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: io.penguintech.${{ matrix.app }}
+          packageName: io.penguintech.${{ steps.tag.outputs.app }}
           releaseFiles: ${{ steps.artifact.outputs.path }}
           track: production
           status: completed

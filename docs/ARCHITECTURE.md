@@ -9,7 +9,8 @@ penguinm/
 ├── (melos config)               under root pubspec's `melos:` key (melos 8 ignores melos.yaml)
 ├── analysis_options.yaml        include: package:penguin_lints/analysis_options.yaml
 ├── .fvmrc  .flutter-version     3.44.8 (stable)
-├── VERSION                      0.1.0 — repo release version, applied to every app
+├── VERSION                      0.1.0 — shared-library version (packages/ + shells/) only;
+│                                 apps version independently via apps/<app>/VERSION
 ├── Makefile                     see CLAUDE.md Commands section
 ├── CLAUDE.md  README.md  LICENSE  .gitignore  .pre-commit-config.yaml  .PLAN  .TODO
 ├── .github/
@@ -18,7 +19,9 @@ penguinm/
 ├── apps/
 │   ├── README.md                how to add an app (points at templates/ + ADDING_AN_APP.md)
 │   ├── penguin_reference/       product key `penguinm`, proves every shell capability end-to-end
+│   │   └── VERSION              0.1.0 — this app's own version; see docs/RELEASE.md
 │   ├── penguincloud/            product key `penguincloud`
+│   │   └── VERSION              0.1.0 — this app's own version; see docs/RELEASE.md
 │   └── gazer/                   (incoming) Gazer Mobile v2 — moved in by the waddlebot session
 ├── shells/
 │   └── penguin_app_shell/       runPenguinApp(AppManifest) — bootstrap + router + chrome

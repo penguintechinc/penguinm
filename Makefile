@@ -107,5 +107,9 @@ pre-commit: ## lint -> test-security -> smoke-test -> test -> coverage -> check-
 	echo "pre-commit: log at $$logdir/summary.log (exit $$status)"; \
 	exit $$status
 
-version: ## Apply VERSION (+ epoch build) to every app pubspec
-	$(SCRIPTS)/version.sh
+version: ## Apply an app's own VERSION (+ epoch build) to its pubspec. Vars: APP=<app>
+	@if [ -z "$(APP)" ]; then \
+		echo "usage: make version APP=<app>" >&2; \
+		exit 1; \
+	fi
+	$(SCRIPTS)/version.sh $(APP)

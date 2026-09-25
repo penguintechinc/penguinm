@@ -91,7 +91,8 @@ penguinm/
 ├── melos config                 under root pubspec's `melos:` key (melos 8 ignores melos.yaml)
 ├── analysis_options.yaml        include: package:penguin_lints/analysis_options.yaml
 ├── .fvmrc  .flutter-version     3.44.8 (stable)
-├── VERSION                      0.1.0 — repo release version, applied to every app
+├── VERSION                      0.1.0 — shared-library version (packages/ + shells/) only;
+│                                 apps version independently via apps/<app>/VERSION
 ├── Makefile                     see Commands section
 ├── CLAUDE.md  README.md  LICENSE  .gitignore  .pre-commit-config.yaml  .PLAN  .TODO
 ├── .github/
@@ -99,8 +100,8 @@ penguinm/
 │   └── workflows/               ci.yml security.yml toolchain-image.yml release-android.yml e2e-android.yml
 ├── apps/
 │   ├── README.md                how to add an app (points at templates/ + docs/ADDING_AN_APP.md)
-│   ├── penguin_reference/       product key `penguinm`, proves every shell capability end-to-end
-│   ├── penguincloud/            product key `penguincloud`
+│   ├── penguin_reference/       product key `penguinm`, proves every shell capability end-to-end; VERSION 0.1.0
+│   ├── penguincloud/            product key `penguincloud`; VERSION 0.1.0
 │   └── gazer/                   (incoming) Gazer Mobile v2 — moved in by the waddlebot session
 ├── shells/
 │   └── penguin_app_shell/       runPenguinApp(AppManifest) — bootstrap + router + chrome
@@ -167,7 +168,8 @@ Design consequences: the shell gains a sibling-app launcher (§4.10) so companio
 
 ```
 apps/<app_name>/
-├── pubspec.yaml               name: <app_name>; resolution: workspace; deps: penguin_app_shell + packages via path; exact versions
+├── VERSION                    this app's own semver (X.Y.Z) — source of truth for its pubspec `version:`; see docs/RELEASE.md
+├── pubspec.yaml               name: <app_name>; resolution: workspace; deps: penguin_app_shell + packages via path; exact versions; version: <VERSION>+<epoch> via `make version APP=<app_name>`
 ├── env/                       PUBLIC build config only (URLs, project keys) — one JSON per flavor, no secrets
 │   ├── dev.json  beta.json  prod.json
 ├── lib/
@@ -213,5 +215,5 @@ test-integration       Run integration_test/ suites (requires Android emulator, 
 test-security          gitleaks, trivy, osv-scanner, semgrep, zizmor, hadolint
 test-unit              Run unit tests only (test/, no integration_test/)
 verify-hooks           Report whether pre-commit/pre-push hooks are installed and non-empty
-version                Apply VERSION (+ epoch build) to every app pubspec
+version                Apply an app's own VERSION (+ epoch build) to its pubspec (Vars: APP=<app>)
 ```
