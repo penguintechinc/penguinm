@@ -20,3 +20,11 @@ coverage/
 /build/artifacts/
 # SDD workspace (per-plan scratch: ledger, briefs, review packages) — never committed or scanned
 .superpowers/
+
+# From Gazer integration (Android signing secret + web/doc build artifacts)
+key.properties
+*.dart.js
+*.js.deps
+*.js.map
+doc/api/
+*.info.json
