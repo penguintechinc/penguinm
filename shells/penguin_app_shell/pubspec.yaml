@@ -26,6 +26,8 @@ dependencies:
     path: ../../packages/penguin_flags
   penguin_offline:
     path: ../../packages/penguin_offline
+  penguin_rasp:
+    path: ../../packages/penguin_rasp
   penguin_update:
     path: ../../packages/penguin_update
   penguin_ui:

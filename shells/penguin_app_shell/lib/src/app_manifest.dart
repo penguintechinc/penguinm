@@ -31,6 +31,7 @@ class AppManifest {
     this.extraRoutes = const [],
     this.siblings = const [],
     this.applicationId,
+    this.raspPolicy = const RaspPolicy(),
   });
 
   /// Backend product this app talks to; scopes feature-flag keys.
@@ -79,4 +80,9 @@ class AppManifest {
   /// Android application id (`io.penguintech.<app>`); falls back to
   /// [productKey] when omitted.
   final String? applicationId;
+
+  /// RASP (runtime application self-protection) policy for this app;
+  /// disabled by default (non-breaking) — see `docs/RASP.md`. Only takes
+  /// effect once `${productKey}.rasp` is also enabled via feature flags.
+  final RaspPolicy raspPolicy;
 }
