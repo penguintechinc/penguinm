@@ -68,9 +68,11 @@ while IFS= read -r f; do
     */packages/penguin_core/lib/src/console_logger.dart|\
     */packages/flutter_libs/lib/src/console_version/version_logger.dart|\
     */packages/flutter_libs/lib/src/form_modal_builder/sanitized_logger.dart|\
+    */apps/gazer/lib/services/gazer_log.dart|\
     packages/penguin_core/lib/src/console_logger.dart|\
     packages/flutter_libs/lib/src/console_version/version_logger.dart|\
-    packages/flutter_libs/lib/src/form_modal_builder/sanitized_logger.dart)
+    packages/flutter_libs/lib/src/form_modal_builder/sanitized_logger.dart|\
+    apps/gazer/lib/services/gazer_log.dart)
       echo "check-logging: allow - $f (sanctioned logging sink)"
       continue
       ;;
