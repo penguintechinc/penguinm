@@ -164,13 +164,17 @@ configurations.all {
             libs.androidx.test.rules
                 .get(),
             libs.junit4.get(),
-            // Bump BouncyCastle (pulled transitively by RootEncoder) from 1.84 to
-            // 1.85: 1.84 carries CVE-2026-8763 (CRITICAL) + CVE-2026-13506 (HIGH),
-            // both fixed in 1.85 — a security patch of the same jdk15to18 line.
-            "org.bouncycastle:bcprov-jdk15to18:1.85",
-            "org.bouncycastle:bcpkix-jdk15to18:1.85",
-            "org.bouncycastle:bctls-jdk15to18:1.85",
-            "org.bouncycastle:bcutil-jdk15to18:1.85",
+            // Bump the whole BouncyCastle jdk15to18 set (pulled transitively by
+            // RootEncoder) from 1.84 to 1.86: 1.84's bcprov carries CVE-2026-8763
+            // (CRITICAL) + CVE-2026-13506 (HIGH). 1.85 fixed the CVEs but introduced a
+            // packaging regression (bcprov+bcutil both shipped
+            // org.bouncycastle.asn1.iana.IANAObjectIdentifiers → duplicate-class
+            // failure); 1.86 keeps the CVE fixes and restores distinct modules. Forced
+            // as one consistent set so no cross-module class overlap remains.
+            "org.bouncycastle:bcprov-jdk15to18:1.86",
+            "org.bouncycastle:bcpkix-jdk15to18:1.86",
+            "org.bouncycastle:bctls-jdk15to18:1.86",
+            "org.bouncycastle:bcutil-jdk15to18:1.86",
         )
     }
 }
