@@ -10,10 +10,17 @@ on:
 permissions:
   contents: read
 
+# Supersede an in-progress run when a new commit is pushed to the same PR/branch
+# instead of piling runs up (a stuck job otherwise runs to the 6h default).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dart:
     name: dart
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -57,6 +64,7 @@ jobs:
   android:
     name: android (${{ matrix.app }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # UID 1001:GID 0 matches the GitHub-hosted runner's ownership of
     # $GITHUB_WORKSPACE (uid 1001); T8 makes the image's /opt/flutter,
     # Android SDK dir, and appuser (uid 1000) home group-0 writable, so
@@ -88,6 +96,16 @@ jobs:
 
       - name: flutter build apk --debug --flavor dev
         working-directory: apps/${{ matrix.app }}
+        # The container runs as UID 1001 (to match the runner's $GITHUB_WORKSPACE
+        # ownership), which has no /etc/passwd entry, so the JVM cannot resolve a
+        # home directory and sets user.home="?". AGP then derives the default debug
+        # keystore path as "<module>/?/.android/debug.keystore" — a bogus relative
+        # path that fails Gradle 9's strict input-file validation on packageDevDebug.
+        # Pin user.home (JVM-only, does not affect flutter/pub) to the writable
+        # runner temp so AGP creates and finds the auto debug keystore there. (R21:
+        # this is what the 1001:0 pairing needed; it only surfaces on a real CI run.)
+        env:
+          JAVA_TOOL_OPTIONS: -Duser.home=${{ runner.temp }}
         run: flutter build apk --debug --flavor dev --dart-define-from-file=env/dev.json
 
       - name: Upload debug APK

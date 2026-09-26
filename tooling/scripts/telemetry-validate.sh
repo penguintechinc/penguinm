@@ -41,14 +41,30 @@ SINK_URL="http://127.0.0.1:${SINK_PORT}"
 SINK_PID=""
 
 cleanup() {
-  if [ -n "$SINK_PID" ] && kill -0 "$SINK_PID" 2>/dev/null; then
-    kill "$SINK_PID" 2>/dev/null || true
-    wait "$SINK_PID" 2>/dev/null || true
+  # `dart run` spawns a dartvm grandchild that holds the port and does NOT exit
+  # when only the launcher is signalled; a blocking `wait` on the launcher then
+  # hangs the job for its full timeout (observed in CI, where it also printed
+  # "shutting down" yet stayed alive). The sink is launched under job control
+  # (set -m) so it and that grandchild share their OWN process group (pgid ==
+  # SINK_PID); signal the whole group with a bounded grace then force-kill, and
+  # never block on `wait`. A process-group kill is specific to the sink subtree —
+  # unlike a command-name match, which can also hit a caller whose command line
+  # merely mentions the sink.
+  if [ -n "$SINK_PID" ]; then
+    kill -TERM -"$SINK_PID" 2>/dev/null || true
+    _n=0
+    while kill -0 -"$SINK_PID" 2>/dev/null; do
+      [ "$_n" -ge 3 ] && break
+      sleep 1
+      _n=$((_n + 1))
+    done
+    kill -KILL -"$SINK_PID" 2>/dev/null || true
   fi
-  # `dart run otlp_sink` spawns a dartvm grandchild that actually holds the
-  # port; killing the launcher above does not reap it. Free the port explicitly
-  # so a subsequent run can bind (root cause of leaked :4318 listeners).
-  _port_pid="$(ss -ltnp 2>/dev/null | grep "127.0.0.1:${SINK_PORT} " | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)"
+  # Belt-and-suspenders: free the port by pid where ss can see it.
+  # `|| true`: with the group-kill above having already freed the port, this grep
+  # matches nothing and returns 1, which under `set -euo pipefail` would make the
+  # EXIT trap itself exit non-zero — mask it so a clean teardown reports success.
+  _port_pid="$(ss -ltnp 2>/dev/null | grep "127.0.0.1:${SINK_PORT} " | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
   [ -n "$_port_pid" ] && kill -9 $_port_pid 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -64,8 +80,13 @@ if [ ! -d apps/penguin_reference ]; then
 fi
 
 echo "telemetry-validate: starting otlp_sink on $SINK_URL"
-(cd tooling/otlp_sink && dart run otlp_sink --port "$SINK_PORT") &
+# set -m puts this background job in its own process group (pgid == SINK_PID) so
+# cleanup() can group-kill the launcher AND the dartvm grandchild `dart run`
+# spawns. exec replaces the subshell with dart so no extra shell lingers.
+set -m
+(cd tooling/otlp_sink && exec dart run otlp_sink --port "$SINK_PORT") &
 SINK_PID=$!
+set +m
 
 waited=0
 until curl -sf -o /dev/null "$SINK_URL/summary" 2>/dev/null; do
