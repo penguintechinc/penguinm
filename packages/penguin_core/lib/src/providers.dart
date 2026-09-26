@@ -5,6 +5,7 @@ import 'app_config_controller.dart';
 import 'clock.dart';
 import 'console_logger.dart';
 import 'logger.dart';
+import 'rasp_engine.dart';
 import 'sinks.dart';
 
 /// Live [AppConfig] state, mutable at runtime via [AppConfigController].
@@ -23,6 +24,13 @@ final loggerProvider = Provider<PenguinLogger>((ref) => ConsoleLogger());
 /// Metrics emission sink; a no-op until `penguin_telemetry` overrides it.
 final metricsSinkProvider = Provider<MetricsSink>(
   (ref) => const NoopMetricsSink(),
+);
+
+/// RASP (runtime application self-protection) engine; a no-op until the
+/// shell's Bootstrap phase overrides it with a real engine (see
+/// `penguin_rasp`).
+final raspEngineProvider = Provider<RaspEngine>(
+  (ref) => const NoopRaspEngine(),
 );
 
 /// Trace span sink; a no-op until `penguin_telemetry` overrides it.
