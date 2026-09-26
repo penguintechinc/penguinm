@@ -35,5 +35,13 @@ void main() {
     const traces = NoopTraceSink();
     expect(metrics, isA<MetricsSink>());
     expect(traces, isA<TraceSink>());
+
+    const raspEngine = NoopRaspEngine();
+    const raspPolicy = RaspPolicy();
+    final raspThreat = RaspThreat(RaspThreatType.hooking, DateTime.now());
+    expect(raspEngine, isA<RaspEngine>());
+    expect(raspPolicy.actionFor(RaspThreatType.hooking), RaspAction.block);
+    expect(raspThreat.type, RaspThreatType.hooking);
+    expect(const RaspConfig(), isA<RaspConfig>());
   });
 }

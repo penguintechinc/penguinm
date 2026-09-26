@@ -10,6 +10,7 @@ export 'src/fake_clock.dart';
 export 'src/fake_connectivity_monitor.dart';
 export 'src/fake_flag_source.dart';
 export 'src/fake_license_source.dart';
+export 'src/fake_rasp_engine.dart';
 export 'src/fake_token_provider.dart';
 export 'src/fake_update_checker.dart';
 export 'src/fixtures/chat_messages.dart';

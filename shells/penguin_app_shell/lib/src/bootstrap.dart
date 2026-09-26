@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode, visibleForTesting;
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:penguin_api/penguin_api.dart';
 import 'package:penguin_auth/penguin_auth.dart';
@@ -7,10 +8,12 @@ import 'package:penguin_core/penguin_core.dart';
 import 'package:penguin_flags/penguin_flags.dart';
 import 'package:penguin_offline/penguin_offline.dart'
     show ConnectivityMonitor, connectivityMonitorProvider;
+import 'package:penguin_rasp/penguin_rasp.dart';
 import 'package:penguin_telemetry/penguin_telemetry.dart';
 
 import 'app_manifest.dart';
 import 'bootstrap_result.dart';
+import 'rasp_terminate.dart';
 
 /// A [FlagSource] used when no PostHog host/project key is configured;
 /// `FeatureFlags` never calls it in that case (see its `_refreshInternal`
@@ -103,6 +106,8 @@ class ShellServices {
     this.authBackend,
     this.telemetryExporter,
     this.flagCache,
+    this.raspEngine,
+    this.onRaspBlock,
   });
 
   /// Replaces the real `connectivity_plus`-backed [ConnectivityMonitor]
@@ -138,6 +143,19 @@ class ShellServices {
   /// behind `ConnectivityMonitor`. Inject an `InMemoryFlagCache` (from
   /// `penguin_testing`) to avoid it.
   final FlagCache? flagCache;
+
+  /// Replaces the real `FreeraspEngine` (from `penguin_rasp`) the RASP
+  /// bootstrap phase would otherwise construct and start. Inject a
+  /// `FakeRaspEngine` (from `penguin_testing`) to drive detections
+  /// deterministically without the native freerasp platform channel, which
+  /// has no working implementation under `flutter_test`/CI.
+  final RaspEngine? raspEngine;
+
+  /// Replaces `raspTerminate` as the callback `RaspGuard` invokes when a
+  /// block-type threat fires while enforcing. Inject a spy in tests —
+  /// `raspTerminate` must never actually run under `flutter_test` (it hard
+  /// exits the process). Null means: use `raspTerminate`.
+  final void Function()? onRaspBlock;
 }
 
 /// Resolves every cross-cutting provider a penguinm app needs — telemetry,
@@ -149,6 +167,23 @@ class ShellServices {
 /// `runPenguinApp`.
 class Bootstrap {
   const Bootstrap._();
+
+  /// Keeps the RASP phase's [RaspGuard] alive for the app's lifetime once
+  /// [run] returns. [run] is a static method with no instance and
+  /// [BootstrapResult] holds only provider overrides (plain data, not the
+  /// guard itself), so without a reference held somewhere outside `run`'s
+  /// local scope, the guard — and the stream subscription it holds on the
+  /// RASP engine's `threats` stream — would become eligible for garbage
+  /// collection the moment `run` returns, silently ending detection. A
+  /// private static field is the simplest holder; [activeRaspGuardForTest]
+  /// exposes it read-only so tests can assert it is retained.
+  static RaspGuard? _activeRaspGuard;
+
+  /// The most recently retained RASP guard, or null if RASP has never
+  /// started. Test-only: production code has no reason to read this back
+  /// (the guard's job is done once it's subscribed).
+  @visibleForTesting
+  static RaspGuard? get activeRaspGuardForTest => _activeRaspGuard;
 
   /// Runs the full bootstrap sequence for [manifest], always building real
   /// implementations for the nine providers it manages
@@ -245,7 +280,53 @@ class Bootstrap {
       );
     }
 
-    // 3. Auth backend — sync, plain-object construction; wrapped anyway so
+    // 3. RASP (runtime application self-protection) — gated by both the
+    //    per-app policy and the `${productKey}.rasp` feature flag (default
+    //    OFF), so it is a runtime kill-switch as well as a build toggle.
+    //    Engine start/detection failures never escape this phase: recorded
+    //    as a `BootstrapWarning('rasp', e)` and logged, matching every
+    //    other phase's contract.
+    RaspEngine? raspEngine;
+    try {
+      if (manifest.raspPolicy.enabled &&
+          featureFlags.isEnabled('${config.productKey}.rasp')) {
+        final engine = services.raspEngine ?? FreeraspEngine();
+        final guard = RaspGuard(
+          engine: engine,
+          config: RaspConfig(
+            packageName: manifest.applicationId,
+            isProd: kReleaseMode,
+            minAndroidSdk: manifest.raspPolicy.minAndroidSdk,
+            minIosVersion: manifest.raspPolicy.minIosVersion,
+          ),
+          metrics: metrics,
+          logger: logger,
+          policy: manifest.raspPolicy,
+          enforce: raspEnforcementEnabled,
+          onBlock: services.onRaspBlock ?? raspTerminate,
+          currentAndroidSdk: await detectAndroidSdk(),
+          currentIosVersion: await detectIosVersion(),
+        );
+        await guard.start();
+        raspEngine = engine;
+        // Retained for the app's lifetime so the guard's stream
+        // subscription (and thus detection) is not garbage-collected once
+        // `Bootstrap.run` returns — nothing else in Bootstrap's return
+        // value (`BootstrapResult`) holds a reference to it.
+        _activeRaspGuard = guard;
+      }
+    } catch (e, st) {
+      warnings.add(BootstrapWarning('rasp', e));
+      logger.log(
+        LogLevel.warn,
+        'RASP bootstrap failed',
+        attributes: {'error': e.toString()},
+        error: e,
+        stackTrace: st,
+      );
+    }
+
+    // 4. Auth backend — sync, plain-object construction; wrapped anyway so
     //    a future change to either backend constructor can never escape.
     //    Skipped entirely when the caller injects one via `services`.
     AuthBackend authBackend;
@@ -274,7 +355,7 @@ class Bootstrap {
       }
     }
 
-    // 4. API client — a lazy override so it always resolves
+    // 5. API client — a lazy override so it always resolves
     //    `authControllerProvider.notifier` from whichever container ends
     //    up hosting the app (never a throwaway one built here), keeping
     //    the API client and the auth controller it takes tokens from in
@@ -289,7 +370,7 @@ class Bootstrap {
       ),
     );
 
-    // 5. Connectivity monitor — a lazy override so `.start()` runs once,
+    // 6. Connectivity monitor — a lazy override so `.start()` runs once,
     //    lazily, in the container the app actually uses; its failure is
     //    caught inside the provider body itself (never synchronously, so
     //    a provider read can never throw) and only logged, since a
@@ -327,6 +408,7 @@ class Bootstrap {
       authBackendProvider.overrideWithValue(authBackend),
       apiClientOverride,
       connectivityOverride,
+      if (raspEngine != null) raspEngineProvider.overrideWithValue(raspEngine),
     ];
 
     stopwatch.stop();
