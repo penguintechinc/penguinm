@@ -12,6 +12,7 @@ workspace:
   - packages/penguin_flags
   - packages/penguin_offline
   - packages/penguin_update
+  - packages/penguin_rasp
   - packages/penguin_ui
   - packages/penguin_testing
   - packages/flutter_libs
