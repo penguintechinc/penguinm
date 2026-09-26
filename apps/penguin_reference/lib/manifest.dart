@@ -30,5 +30,12 @@ AppManifest buildManifest() {
     ),
     brand: const AppBrand(displayName: 'Penguin Reference'),
     features: const [HomeModule(), OfflineDemoModule()],
+    // RASP is enabled for this app so the reference app proves the full
+    // shell capability end-to-end; it only actually starts once the
+    // `penguinm.rasp` PostHog flag (default OFF) is also on — see
+    // docs/RASP.md. minAndroidSdk 24 matches the platform convention's
+    // `minSdk = 24` (platform/android/gradle/penguin-android.gradle.kts),
+    // itself above freerasp's own floor of 23.
+    raspPolicy: const RaspPolicy(enabled: true, minAndroidSdk: 24),
   );
 }
