@@ -170,7 +170,7 @@ COPY --chown=1000:0 tooling/otlp_sink ./tooling/otlp_sink
 COPY --chown=1000:0 platform ./platform
 
 ## Bootstrap melos workspace
-RUN flutter pub get && dart run melos bootstrap
+RUN dart pub global activate melos 8.7.0 && flutter pub get && dart pub global run melos bootstrap
 
 ## Stage: analyze
 ## Demonstrates Flutter static analysis and formatting
@@ -185,7 +185,7 @@ RUN flutter analyze --fatal-infos && \
 FROM analyze AS test
 
 ## Run test suite
-RUN dart run melos run test
+RUN dart pub global run melos run test
 
 ## Stage: build
 ## Builds APK for demonstration

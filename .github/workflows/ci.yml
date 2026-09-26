@@ -28,17 +28,19 @@ jobs:
           flutter-version: 3.44.8
           channel: stable
 
+      - name: Activate melos (pinned)
+        run: dart pub global activate melos 8.7.0
       - name: melos bootstrap
-        run: dart run melos bootstrap
+        run: dart pub global run melos bootstrap
 
       - name: dart format --set-exit-if-changed
         run: dart format --set-exit-if-changed .
 
       - name: flutter analyze (zero infos/warnings)
-        run: dart run melos run analyze
+        run: dart pub global run melos run analyze
 
       - name: melos run test (coverage per package)
-        run: dart run melos run test
+        run: dart pub global run melos run test
 
       - name: coverage-gate
         run: tooling/scripts/coverage-gate.sh

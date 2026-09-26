@@ -164,6 +164,13 @@ configurations.all {
             libs.androidx.test.rules
                 .get(),
             libs.junit4.get(),
+            // Bump BouncyCastle (pulled transitively by RootEncoder) from 1.84 to
+            // 1.85: 1.84 carries CVE-2026-8763 (CRITICAL) + CVE-2026-13506 (HIGH),
+            // both fixed in 1.85 — a security patch of the same jdk15to18 line.
+            "org.bouncycastle:bcprov-jdk15to18:1.85",
+            "org.bouncycastle:bcpkix-jdk15to18:1.85",
+            "org.bouncycastle:bctls-jdk15to18:1.85",
+            "org.bouncycastle:bcutil-jdk15to18:1.85",
         )
     }
 }
