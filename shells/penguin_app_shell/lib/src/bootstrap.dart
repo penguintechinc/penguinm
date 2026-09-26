@@ -305,6 +305,7 @@ class Bootstrap {
           enforce: raspEnforcementEnabled,
           onBlock: services.onRaspBlock ?? raspTerminate,
           currentAndroidSdk: await detectAndroidSdk(),
+          currentIosVersion: await detectIosVersion(),
         );
         await guard.start();
         raspEngine = engine;
@@ -314,9 +315,15 @@ class Bootstrap {
         // value (`BootstrapResult`) holds a reference to it.
         _activeRaspGuard = guard;
       }
-    } catch (e) {
+    } catch (e, st) {
       warnings.add(BootstrapWarning('rasp', e));
-      logger.warn('RASP bootstrap failed', attributes: {'error': e.toString()});
+      logger.log(
+        LogLevel.warn,
+        'RASP bootstrap failed',
+        attributes: {'error': e.toString()},
+        error: e,
+        stackTrace: st,
+      );
     }
 
     // 4. Auth backend — sync, plain-object construction; wrapped anyway so

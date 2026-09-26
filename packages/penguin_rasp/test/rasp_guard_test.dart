@@ -28,6 +28,7 @@ void main() {
     RaspPolicy policy = const RaspPolicy(),
     void Function()? onBlock,
     int? currentAndroidSdk,
+    String? currentIosVersion,
   }) => RaspGuard(
     engine: engine,
     config: const RaspConfig(),
@@ -37,6 +38,7 @@ void main() {
     enforce: enforce,
     onBlock: onBlock,
     currentAndroidSdk: currentAndroidSdk,
+    currentIosVersion: currentIosVersion,
   );
 
   group('RaspGuard threat handling', () {
@@ -160,6 +162,10 @@ void main() {
           stackTrace: any(named: 'stackTrace'),
         ),
       ).called(1);
+      // A partially-started engine (e.g. an engine whose `start()` threw
+      // after some internal setup) must be torn down rather than left
+      // running with no downstream listener.
+      expect(engine.stopped, isTrue);
     });
 
     test('a stream error records rasp.failure via the onError path', () async {
@@ -251,6 +257,56 @@ void main() {
           attributes: any(named: 'attributes'),
         ),
       );
+    });
+  });
+
+  group('RaspGuard iOS OS-version gate', () {
+    test('below minIosVersion emits unsupportedOs and calls onBlock '
+        '(default block set)', () async {
+      var blocked = false;
+      final guard = buildGuard(
+        enforce: true,
+        policy: const RaspPolicy(minIosVersion: '15.0'),
+        currentIosVersion: '14.0',
+        onBlock: () => blocked = true,
+      );
+
+      await guard.start();
+      await flushMicrotasks();
+
+      final captured =
+          verify(
+                () => metrics.counter(
+                  RaspMetrics.threat,
+                  1,
+                  attributes: captureAny(named: 'attributes'),
+                ),
+              ).captured.single
+              as Map<String, Object?>;
+      expect(captured['threat'], RaspThreatType.unsupportedOs.name);
+      expect(blocked, isTrue);
+    });
+
+    test('at or above minIosVersion emits no unsupportedOs threat', () async {
+      var blocked = false;
+      final guard = buildGuard(
+        enforce: true,
+        policy: const RaspPolicy(minIosVersion: '15.0'),
+        currentIosVersion: '16.0',
+        onBlock: () => blocked = true,
+      );
+
+      await guard.start();
+      await flushMicrotasks();
+
+      verifyNever(
+        () => metrics.counter(
+          RaspMetrics.threat,
+          1,
+          attributes: any(named: 'attributes'),
+        ),
+      );
+      expect(blocked, isFalse);
     });
   });
 

@@ -95,7 +95,9 @@ failure is recorded as `rasp.failure` + an error log and swallowed. At the Boots
 level, any failure surfaces only as a `BootstrapWarning('rasp', e)` — every other
 provider/phase still initializes normally.
 
-## Known v1 gap: iOS
+## Known v1 gaps
+
+### iOS
 
 v1 is Android-first (per `client-flutter.md`): freerasp's iOS support needs a
 `teamId` and, on both platforms, a `watcherMail` (security-report contact) in its
@@ -106,3 +108,17 @@ no functional effect on detection (it only gates Talsec's weekly Security Report
 Either way this is caught by `RaspGuard.start()`'s fail-soft try/catch — never a crash,
 just RASP silently not running — until a follow-up task extends `RaspConfig` with both
 fields. Android is unaffected by the iOS half of this gap.
+
+### App-identity checks (tampering / untrusted install source)
+
+App-integrity (tampering) and unofficial-store detection require configuring the
+per-flavor Android `packageName` + release `signingCertHashes` (and, on iOS, `teamId`/
+`watcherMail`, see above). These are per-app **deployment** config and are NOT yet wired
+through `RaspConfig`/`AppManifest`, so `androidConfig` is currently null → those specific
+checks are inactive. Setting them statically is deliberately avoided because the app uses
+flavor `applicationId` suffixes (`.dev`/`.beta`), so a static base package name would
+false-positive as tampering.
+
+Device-level checks (root/jailbreak, hooking, debugger, emulator, and the OS-version gate)
+DO run today — this gap is scoped to app-identity checks only. Tracked as a follow-up
+("app-identity RASP config").

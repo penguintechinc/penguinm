@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:penguin_core/penguin_core.dart';
 
+import 'os_check.dart';
 import 'rasp_metrics.dart';
 
 /// Runtime guard that starts a [RaspEngine], turns every detected threat
@@ -13,10 +14,11 @@ class RaspGuard {
   /// Creates a guard wiring [engine] to [metrics]/[logger] under [policy].
   /// [config] is passed to [RaspEngine.start]. [enforce] gates whether a
   /// block-type threat invokes [onBlock] (null ⇒ no-op, so this class is
-  /// fully testable without terminating anything). [currentAndroidSdk] is
-  /// the caller-injected detected Android SDK level for the supplementary
-  /// OS-version gate; null skips that check (device_info wiring is a later
-  /// task).
+  /// fully testable without terminating anything). [currentAndroidSdk] and
+  /// [currentIosVersion] are the caller-injected detected Android SDK
+  /// level / iOS system version for the supplementary OS-version gate on
+  /// each platform; null skips the corresponding check (device_info
+  /// wiring is injected by the caller — see `bootstrap.dart`).
   RaspGuard({
     required this.engine,
     required this.config,
@@ -26,6 +28,7 @@ class RaspGuard {
     required this.enforce,
     this.onBlock,
     this.currentAndroidSdk,
+    this.currentIosVersion,
   });
 
   /// The underlying detection engine.
@@ -55,11 +58,18 @@ class RaspGuard {
   /// Android OS-version gate.
   final int? currentAndroidSdk;
 
+  /// Detected iOS system version (e.g. `'17.4'`), injected by the caller;
+  /// null disables the iOS OS-version gate.
+  final String? currentIosVersion;
+
   StreamSubscription<RaspThreat>? _subscription;
 
   /// Starts [engine], subscribes to its threat stream, and runs the
-  /// supplementary Android OS-version gate. Never throws: any failure is
-  /// recorded as a [RaspMetrics.failure] metric + error log and swallowed.
+  /// supplementary Android/iOS OS-version gates. Never throws: any
+  /// failure is recorded as a [RaspMetrics.failure] metric + error log
+  /// and swallowed; on failure, a partially-started [engine] is
+  /// best-effort stopped so it is never left running with no downstream
+  /// listener.
   Future<void> start() async {
     try {
       await engine.start(config);
@@ -73,9 +83,23 @@ class RaspGuard {
       if (minSdk != null && sdk != null && sdk < minSdk) {
         _handleThreat(RaspThreat(RaspThreatType.unsupportedOs, DateTime.now()));
       }
+
+      final minIos = policy.minIosVersion;
+      final iosVersion = currentIosVersion;
+      if (minIos != null &&
+          iosVersion != null &&
+          isIosVersionBelow(iosVersion, minIos)) {
+        _handleThreat(RaspThreat(RaspThreatType.unsupportedOs, DateTime.now()));
+      }
     } catch (e, st) {
       metrics.counter(RaspMetrics.failure, 1, attributes: {'phase': 'start'});
       logger.error('RASP engine failed to start', error: e, stackTrace: st);
+      try {
+        await engine.stop();
+      } catch (_) {
+        // Best-effort teardown of a partially-started engine; never
+        // rethrow — this is already inside the fail-soft catch.
+      }
     }
   }
 
