@@ -1,0 +1,11 @@
+{
+  "PENGUIN_ENV": "prealpha",
+  "API_BASE_URL": "http://10.0.2.2:5000",
+  "OTEL_EXPORTER_OTLP_ENDPOINT": "http://10.0.2.2:4318",
+  "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+  "POSTHOG_HOST": "https://posthog.example.com",
+  "POSTHOG_PROJECT_KEY": "phc_dev",
+  "LICENSE_SERVER_URL": "https://license.penguintech.io",
+  "OAUTH_CLIENT_ID": "io.penguintech.penguin_reference",
+  "OAUTH_REDIRECT_URI": "io.penguintech.penguin_reference.dev://oauth/callback"
+}

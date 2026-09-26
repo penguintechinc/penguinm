@@ -1,0 +1,6 @@
+# hadolint configuration for every Dockerfile in penguinm (auto-discovered from the repo root;
+# also passed explicitly via --config in Makefile, pre-commit, and CI so the path is never ambiguous).
+# No `ignored:` list — findings are fixed, never suppressed.
+failure-threshold: info
+trustedRegistries:
+  - docker.io

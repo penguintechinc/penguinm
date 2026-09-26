@@ -1,0 +1,26 @@
+name: penguin_ui
+description: PenguinTheme, responsive layout widgets (ResponsiveScaffold, AdaptiveLayout) and error/loading/empty states.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_libs:
+    path: ../flutter_libs
+  flutter_riverpod: 3.4.3
+  penguin_core:
+    path: ../penguin_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: 1.0.5
+  penguin_lints:
+    path: ../penguin_lints
+  penguin_testing:
+    path: ../penguin_testing

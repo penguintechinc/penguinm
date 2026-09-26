@@ -1,0 +1,203 @@
+# Multi-stage Dockerfile for Flutter + Android development toolchain
+# Supports Android builds for flutter-3.44.8
+# https://flutter.dev/docs/get-started/install
+
+ARG FLUTTER_VERSION=3.44.8
+ARG FLUTTER_REVISION=058e0af2c2
+ARG CMDLINE_TOOLS_ZIP=commandlinetools-linux-15859902_latest.zip
+ARG CMDLINE_TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
+ARG ANDROID_PLATFORM=36
+ARG BUILD_TOOLS=36.0.0
+ARG NDK_VERSION=28.2.13676358
+
+## Stage: toolchain
+## Published as ghcr.io/penguintechinc/penguinm/flutter-android:*
+## Base image with all build tools: JDK, Android SDK, Flutter, Git, etc.
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS toolchain
+
+# Set shell options for safer execution
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG FLUTTER_VERSION
+ARG FLUTTER_REVISION
+ARG CMDLINE_TOOLS_ZIP
+ARG CMDLINE_TOOLS_SHA256
+ARG ANDROID_PLATFORM
+ARG BUILD_TOOLS
+ARG NDK_VERSION
+
+# Install system dependencies
+# - openjdk-17-jdk-headless: JDK for Android build tools
+# - git: Clone Flutter repository
+# - curl: Download cmdline-tools
+# - unzip: Extract cmdline-tools
+# - xz-utils: Handle compressed archives
+# - ca-certificates: HTTPS validation
+# - clang, cmake, ninja-build, pkg-config: Required for native builds (sqlite3)
+# - libglu1-mesa: OpenGL utilities
+# libglu1-mesa: NOT in Flutter's documented Linux prerequisites, but flutter_tester (flutter test) loads libGLU at runtime (flutter/flutter#17297) — kept for tests, not a desktop toolchain.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk-headless=17.0.20.1+1-1~deb12u1 \
+    git=1:2.39.5-0+deb12u3 \
+    curl=7.88.1-10+deb12u15 \
+    unzip=6.0-28+deb12u1 \
+    xz-utils=5.4.1-1+deb12u1 \
+    ca-certificates=20250419~deb12u1 \
+    clang=1:14.0-55.7~deb12u1 \
+    cmake=3.25.1-1 \
+    ninja-build=1.11.1-2~deb12u1 \
+    pkg-config=1.8.1-1 \
+    libglu1-mesa=9.0.2-1.1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and verify Android Command-line Tools
+# Pinned to a specific version and validated against SHA256 checksum
+RUN mkdir -p /tmp/android-sdk && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --speed-limit 10240 --speed-time 60 "https://dl.google.com/android/repository/${CMDLINE_TOOLS_ZIP}" -o /tmp/android-sdk/cmdline-tools.zip && \
+    echo "${CMDLINE_TOOLS_SHA256}  /tmp/android-sdk/cmdline-tools.zip" | sha256sum -c - && \
+    unzip -q -d /tmp/android-sdk /tmp/android-sdk/cmdline-tools.zip && \
+    mkdir -p /opt/android-sdk/cmdline-tools && \
+    mv /tmp/android-sdk/cmdline-tools /opt/android-sdk/cmdline-tools/latest && \
+    rm -rf /tmp/android-sdk
+
+# Set Android environment variables
+ENV ANDROID_SDK_ROOT=/opt/android-sdk \
+    ANDROID_HOME=/opt/android-sdk \
+    PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
+
+# Accept Android SDK licenses
+# yes pipes license acceptance (non-blocking) to sdkmanager to avoid hanging
+RUN (yes || true) | sdkmanager --licenses
+
+# Install Android SDK packages (platform-tools, platforms, build-tools) via sdkmanager
+RUN sdkmanager \
+      "platform-tools" \
+      "platforms;android-${ANDROID_PLATFORM}" \
+      "build-tools;${BUILD_TOOLS}"
+
+# Download and install Android NDK via curl with stall detection
+# This isolates the NDK download from sdkmanager's single-connection limitation (~20 KB/s)
+# and applies curl's stall-speed protection (min 10 KB/s over 60s) to ensure robustness
+# when CDN connections are slow. Retry up to 5 times with resume support (-C -).
+# SHA-1 hash source: https://dl.google.com/android/repository/repository2-3.xml
+RUN mkdir -p /tmp/ndk-download && \
+    for attempt in 1 2 3 4 5; do \
+      if curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
+          --connect-timeout 30 --speed-limit 10240 --speed-time 60 -C - \
+          "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip" \
+          -o /tmp/ndk-download/android-ndk-r28c-linux.zip; then \
+        break; \
+      fi; \
+      if [ $attempt -lt 5 ]; then \
+        sleep $((attempt * 2)); \
+      else \
+        echo "Failed to download NDK after 5 attempts" >&2; \
+        exit 1; \
+      fi; \
+    done && \
+    echo "a7b54a5de87fecd125a17d54f73c446199e72a64  /tmp/ndk-download/android-ndk-r28c-linux.zip" | \
+      sha1sum -c - && \
+    unzip -q -d /tmp/ndk-download /tmp/ndk-download/android-ndk-r28c-linux.zip && \
+    mkdir -p "/opt/android-sdk/ndk/${NDK_VERSION}" && \
+    mv /tmp/ndk-download/android-ndk-r28c/* "/opt/android-sdk/ndk/${NDK_VERSION}/" && \
+    rm -rf /tmp/ndk-download
+
+# Clone Flutter repository at the specific version and revision
+# Uses shallow clone to reduce size; verifies exact revision; creates a stable branch
+# (avoiding detached HEAD so flutter --version reports 'channel stable' correctly)
+RUN git clone --depth 1 --branch "${FLUTTER_VERSION}" \
+      https://github.com/flutter/flutter /opt/flutter && \
+    test "$(git -C /opt/flutter rev-parse --short=10 HEAD)" = "${FLUTTER_REVISION}" && \
+    git -C /opt/flutter checkout -b stable
+
+# Set Flutter environment variables
+ENV PATH=/opt/flutter/bin:$PATH \
+    FLUTTER_HOME=/opt/flutter \
+    FLUTTER_GIT_URL=https://github.com/flutter/flutter
+
+# Configure Flutter and precache artifacts
+# Licenses were already accepted in the prior RUN, no need to re-accept here
+RUN flutter config --no-analytics --enable-android && \
+    flutter precache --android
+
+# Configure git to trust Flutter SDK checkout under arbitrary UIDs (GitHub Actions compatibility)
+RUN git config --system --add safe.directory /opt/flutter
+
+# Create the non-root application user with PRIMARY group 0 (arbitrary-UID pattern).
+# Every toolchain directory below is group-0 owned and group-writable, so the default
+# user (1000:0) and CI's container user (--user 1001:0, the GitHub runner UID) share write access.
+RUN useradd -r -u 1000 -g 0 -d /home/appuser -M appuser && \
+    mkdir -p /home/appuser && \
+    chown 1000:0 /home/appuser && \
+    chmod g=u /home/appuser
+
+# Make Flutter, Android SDK, and pub cache group-0 owned and group-writable
+# This allows GitHub Actions (--user 1001:0) and other UIDs in group 0 to write
+RUN chgrp -R 0 /opt/flutter /opt/android-sdk && \
+    chmod -R g=u /opt/flutter /opt/android-sdk
+
+# Create pub cache directory with group 0 permissions
+RUN mkdir -p /opt/pub-cache && \
+    chgrp -R 0 /opt/pub-cache && \
+    chmod -R g=u /opt/pub-cache
+
+# ## Set HOME, pub cache, and working directory
+ENV HOME=/home/appuser \
+    PUB_CACHE=/opt/pub-cache
+WORKDIR /work
+
+# Ensure /work is group-writable for group 0
+RUN mkdir -p /work && \
+    chown 1000:0 /work && \
+    chmod g=u /work
+
+# Drop to the non-root user for runtime (group 0 explicit so group-0 write access always applies)
+USER 1000:0
+
+# No health check needed for build toolchain
+HEALTHCHECK NONE
+
+## Stage: deps
+## Demonstrates dependency installation in a Flutter workspace
+FROM toolchain AS deps
+
+## Copy workspace files and analysis configuration
+COPY --chown=1000:0 pubspec.yaml pubspec.lock analysis_options.yaml ./
+COPY --chown=1000:0 packages ./packages
+COPY --chown=1000:0 shells ./shells
+COPY --chown=1000:0 apps ./apps
+COPY --chown=1000:0 tooling/otlp_sink ./tooling/otlp_sink
+COPY --chown=1000:0 platform ./platform
+
+## Bootstrap melos workspace
+RUN dart pub global activate melos 8.7.0 && flutter pub get && dart pub global run melos bootstrap
+
+## Stage: analyze
+## Demonstrates Flutter static analysis and formatting
+FROM deps AS analyze
+
+## Run Flutter analyzer and check formatting
+RUN flutter analyze --fatal-infos && \
+    dart format --set-exit-if-changed .
+
+## Stage: test
+## Demonstrates test execution and proof-of-concept build
+FROM analyze AS test
+
+## Run test suite
+RUN dart pub global run melos run test
+
+## Stage: build
+## Builds APK for demonstration
+FROM test AS build
+
+## Build debug APK for penguin_reference
+WORKDIR /work/apps/penguin_reference
+RUN flutter build apk --debug --flavor dev --dart-define-from-file=env/dev.json
+
+## Stage: output
+## Final output stage with build artifacts (demonstration)
+FROM scratch AS output
+
+## Copy built artifacts
+COPY --from=build /work/apps/penguin_reference/build/app/outputs/flutter-apk/app-dev-debug.apk /artifacts/penguin_reference.apk

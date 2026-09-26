@@ -1,0 +1,16 @@
+# Shared Android Gradle version catalog for every penguinm app (see platform/android/README.md
+# and platform/android/gradle/README.md). This file is the source of truth for AGP/Kotlin;
+# each app's settings.gradle.kts additionally declares them as literal
+# `pluginManagement { plugins { ... version "..." } }` entries, because Gradle's
+# settings-phase plugin resolution cannot dereference an external catalog file at that
+# point — keep both in sync when bumping either version.
+
+[versions]
+agp = "9.0.1"
+kotlin = "2.3.20"
+flutter-plugin-loader = "1.0.0"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+flutter-plugin-loader = { id = "dev.flutter.flutter-plugin-loader", version.ref = "flutter-plugin-loader" }

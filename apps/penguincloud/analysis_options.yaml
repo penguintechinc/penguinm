@@ -1,0 +1,4 @@
+# Was flutter's generated `include: package:flutter_lints/flutter.yaml`, which
+# shadowed the workspace's strict penguin_lints config (the analyzer uses the
+# nearest file, never merges). Fixed round 2.
+include: package:penguin_lints/analysis_options.yaml

@@ -1,0 +1,5 @@
+# Was the migrated `include: package:flutter_lints/flutter.yaml` plus a
+# local rule set from penguin-libs, which shadowed the workspace's strict
+# penguin_lints config (the analyzer uses the nearest file, never merges).
+# Fixed round 2; new findings this surfaces are Task T2's to fix.
+include: package:penguin_lints/analysis_options.yaml

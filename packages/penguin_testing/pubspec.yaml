@@ -1,0 +1,35 @@
+name: penguin_testing
+description: Fakes for every shared-package interface, pump/golden helpers, and the OTLP sink test client, consumed as a dev dependency workspace-wide.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  http: 1.6.0
+  penguin_api:
+    path: ../penguin_api
+  penguin_core:
+    path: ../penguin_core
+  penguin_auth:
+    path: ../penguin_auth
+  penguin_telemetry:
+    path: ../penguin_telemetry
+  penguin_flags:
+    path: ../penguin_flags
+  penguin_offline:
+    path: ../penguin_offline
+  penguin_update:
+    path: ../penguin_update
+
+dev_dependencies:
+  flutter_riverpod: 3.4.3
+  mocktail: 1.0.5
+  penguin_lints:
+    path: ../penguin_lints

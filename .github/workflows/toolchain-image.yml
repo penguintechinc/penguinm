@@ -1,0 +1,80 @@
+name: Publish Flutter Android Toolchain Image
+
+on:
+  push:
+    paths:
+      - 'tooling/docker/**'
+      - '.hadolint.yaml'
+      - '.dockerignore'
+      - '.github/workflows/toolchain-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./tooling/docker/Dockerfile.flutter-android
+          target: toolchain
+          push: true
+          tags: |
+            ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8
+            ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8-${{ github.run_number }}
+
+      - name: Write image digest to job summary
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          echo "## Flutter Android Toolchain Image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** \`${IMAGE_DIGEST}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8-${RUN_NUMBER}\`" >> $GITHUB_STEP_SUMMARY
+
+  scan-workflow:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor workflow security scanner
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          inputs: .github/workflows/toolchain-image.yml
+          version: "1.30.1"
+          advanced-security: false

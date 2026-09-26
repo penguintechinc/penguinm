@@ -1,0 +1,45 @@
+name: penguin_reference
+description: PenguinTech mobile app (penguin_reference).
+version: 0.1.0+1
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  penguin_app_shell:
+    path: ../../shells/penguin_app_shell
+  penguin_core:
+    path: ../../packages/penguin_core
+  penguin_api:
+    path: ../../packages/penguin_api
+  penguin_auth:
+    path: ../../packages/penguin_auth
+  penguin_telemetry:
+    path: ../../packages/penguin_telemetry
+  penguin_flags:
+    path: ../../packages/penguin_flags
+  penguin_offline:
+    path: ../../packages/penguin_offline
+  penguin_update:
+    path: ../../packages/penguin_update
+  penguin_ui:
+    path: ../../packages/penguin_ui
+  flutter_riverpod: 3.4.3
+  go_router: 17.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: 1.0.5
+  penguin_lints:
+    path: ../../packages/penguin_lints
+  penguin_testing:
+    path: ../../packages/penguin_testing
+
+flutter:
+  uses-material-design: true

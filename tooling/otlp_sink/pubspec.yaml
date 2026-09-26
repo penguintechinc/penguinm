@@ -1,0 +1,19 @@
+name: otlp_sink
+description: Local OTLP/HTTP receiver CLI that counts logs/metrics/traces for smoke-test telemetry validation.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  args: 2.7.0
+  path: 1.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: 1.0.5
+  penguin_lints:
+    path: ../../packages/penguin_lints

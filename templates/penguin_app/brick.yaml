@@ -1,0 +1,24 @@
+name: penguin_app
+description: New Flutter app for the penguinm monorepo
+version: 0.1.0
+vars:
+  name:
+    description: App name (snake_case)
+    type: string
+    prompt: App name
+  product_key:
+    description: Product key
+    type: string
+    prompt: Product key
+  display_name:
+    description: Display name
+    type: string
+    prompt: Display name
+  org:
+    description: Organization (default io.penguintech)
+    type: string
+    default: io.penguintech
+  api_base_url_dev:
+    description: API base URL for dev
+    type: string
+    default: http://10.0.2.2:5000

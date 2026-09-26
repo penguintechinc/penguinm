@@ -1,0 +1,143 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - release/**
+      - main
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # gitleaks/gitleaks-action requires a paid licence for organization repos;
+      # the CLI is unlicensed. Pinned + checksum-verified, reads .gitleaks.toml.
+      - name: Install gitleaks (pinned, checksum-verified)
+        run: |
+          curl -fsSL --retry 3 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+      - name: gitleaks detect (full history)
+        run: gitleaks detect --source . --redact --no-banner
+
+  trivy:
+    name: trivy fs (vuln + config)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: trivy fs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,config
+          exit-code: "1"
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          version: v0.69.3
+
+  osv-scanner:
+    name: osv-scanner
+    # security-events: write matches the reusable workflow's own job-level
+    # permissions block (it requests this unconditionally, not gated on
+    # `upload-sarif`); the caller must grant at least this for the callee's
+    # permissions to resolve. We run with upload-sarif: false below, so the
+    # SARIF-upload step inside the reusable workflow is skipped and this
+    # grant goes unused at runtime — kept for permission-resolution
+    # correctness, not because we use it.
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      scan-args: |-
+        --lockfile=./pubspec.lock
+      upload-sarif: false
+
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: false
+
+      - name: Install semgrep (pinned, hash-verified)
+        # Install into a uv-managed venv: the runner user cannot write to the
+        # system site-packages (/usr), and --break-system-packages only bypasses
+        # the PEP 668 marker, not the filesystem permission. --require-hashes
+        # still enforces the pinned hashes from requirements.txt.
+        run: |
+          uv venv /tmp/semgrep-venv
+          uv pip install --python /tmp/semgrep-venv --require-hashes -r tooling/security/requirements.txt
+
+      - name: semgrep
+        # Put the venv bin first on PATH so semgrep's launcher resolves its
+        # sibling pysemgrep/osemgrep from the venv, not a system copy.
+        run: |
+          export PATH="/tmp/semgrep-venv/bin:$PATH"
+          semgrep --config p/security-audit --config p/kotlin --config p/secrets --error .
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          inputs: .github/workflows
+          version: "1.30.1"
+          advanced-security: false
+
+  hadolint:
+    name: hadolint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: hadolint
+        run: docker run --rm -i -v "$PWD/.hadolint.yaml:/.hadolint.yaml:ro" hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d hadolint --config /.hadolint.yaml - < tooling/docker/Dockerfile.flutter-android

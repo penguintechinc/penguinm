@@ -1,0 +1,8 @@
+# avoid_print is disabled only here: otlp_sink is a CLI, and print( is its
+# legitimate stdout (see packages/penguin_lints/README.md and client.md
+# Logging & Observability — "No print( outside tooling/otlp_sink").
+include: package:penguin_lints/analysis_options.yaml
+
+linter:
+  rules:
+    avoid_print: false

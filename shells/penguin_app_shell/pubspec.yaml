@@ -1,0 +1,48 @@
+name: penguin_app_shell
+description: runPenguinApp(AppManifest) — bootstrap order, router wiring, and app chrome shared by every penguinm app.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.2 <4.0.0'
+  flutter: '>=3.44.8'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Regular (not dev) dependency: lib/testing.dart (pumpPenguinApp) exposes flutter_test types
+  # to consumers — the same reasoning as penguin_testing.
+  flutter_test:
+    sdk: flutter
+  penguin_core:
+    path: ../../packages/penguin_core
+  penguin_api:
+    path: ../../packages/penguin_api
+  penguin_auth:
+    path: ../../packages/penguin_auth
+  penguin_telemetry:
+    path: ../../packages/penguin_telemetry
+  penguin_flags:
+    path: ../../packages/penguin_flags
+  penguin_offline:
+    path: ../../packages/penguin_offline
+  penguin_update:
+    path: ../../packages/penguin_update
+  penguin_ui:
+    path: ../../packages/penguin_ui
+  flutter_libs:
+    path: ../../packages/flutter_libs
+  flutter_riverpod: 3.4.3
+  go_router: 17.5.0
+  # Re-enabled (round 1): the win32 conflict was with file_picker 8.3.7,
+  # now re-pinned to 12.3.0 (no win32 dependency) — see flutter_libs/pubspec.yaml.
+  package_info_plus: 10.2.1
+  # SiblingAppLauncher's default UrlLauncher (spec §4.10): deep link, then store fallback.
+  url_launcher: 6.3.2
+
+dev_dependencies:
+  mocktail: 1.0.5
+  penguin_lints:
+    path: ../../packages/penguin_lints
+  penguin_testing:
+    path: ../../packages/penguin_testing

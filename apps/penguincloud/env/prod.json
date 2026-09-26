@@ -1,0 +1,9 @@
+{
+  "PENGUIN_ENV": "prod",
+  "API_BASE_URL": "https://api.penguincloud.io",
+  "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.penguintech.cloud:4318",
+  "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+  "POSTHOG_HOST": "",
+  "POSTHOG_PROJECT_KEY": "",
+  "LICENSE_SERVER_URL": "https://license.penguintech.io"
+}
