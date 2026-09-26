@@ -101,12 +101,15 @@ jobs:
         # home directory and sets user.home="?". AGP then derives the default debug
         # keystore path as "<module>/?/.android/debug.keystore" — a bogus relative
         # path that fails Gradle 9's strict input-file validation on packageDevDebug.
-        # Pin user.home (JVM-only, does not affect flutter/pub) to the writable
-        # runner temp so AGP creates and finds the auto debug keystore there. (R21:
-        # this is what the 1001:0 pairing needed; it only surfaces on a real CI run.)
-        env:
-          JAVA_TOOL_OPTIONS: -Duser.home=${{ runner.temp }}
-        run: flutter build apk --debug --flavor dev --dart-define-from-file=env/dev.json
+        # Pin user.home (JVM-only; does not affect flutter/pub) to a writable dir so
+        # AGP creates the auto debug keystore and Gradle its wrapper dists there.
+        # Use the shell's $RUNNER_TEMP (the in-CONTAINER temp mount, /__w/_temp) —
+        # ${{ runner.temp }} would expand to the HOST path (/home/runner/work/_temp),
+        # which is not mounted in the container, so Gradle's wrapper dir cannot be
+        # created there. (R21: what the 1001:0 pairing needed; surfaces only in CI.)
+        run: |
+          export JAVA_TOOL_OPTIONS="-Duser.home=$RUNNER_TEMP"
+          flutter build apk --debug --flavor dev --dart-define-from-file=env/dev.json
 
       - name: Upload debug APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
