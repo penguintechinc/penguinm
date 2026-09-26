@@ -71,7 +71,7 @@ jobs:
     # 1001:0 can build without --user root. First CI run against the
     # T8-updated image is the validation of this pairing (R21).
     container:
-      image: ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8 # TODO-PIN: replace tag with digest after first toolchain-image publish (T29)
+      image: ghcr.io/penguintechinc/penguinm/flutter-android:3.44.8@sha256:3ea2245494e1f90c8a2ee9149250077d67fd6223a475d3ee6f66b9f62035dcf9 # pinned digest (T29): bump tag and digest together on any toolchain-image rebuild
       options: --user 1001:0
       credentials:
         username: ${{ github.actor }}
