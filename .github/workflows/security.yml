@@ -94,10 +94,20 @@ jobs:
           enable-cache: false
 
       - name: Install semgrep (pinned, hash-verified)
-        run: uv pip install --system --break-system-packages --require-hashes -r tooling/security/requirements.txt
+        # Install into a uv-managed venv: the runner user cannot write to the
+        # system site-packages (/usr), and --break-system-packages only bypasses
+        # the PEP 668 marker, not the filesystem permission. --require-hashes
+        # still enforces the pinned hashes from requirements.txt.
+        run: |
+          uv venv /tmp/semgrep-venv
+          uv pip install --python /tmp/semgrep-venv --require-hashes -r tooling/security/requirements.txt
 
       - name: semgrep
-        run: semgrep --config p/security-audit --config p/kotlin --config p/secrets --error .
+        # Put the venv bin first on PATH so semgrep's launcher resolves its
+        # sibling pysemgrep/osemgrep from the venv, not a system copy.
+        run: |
+          export PATH="/tmp/semgrep-venv/bin:$PATH"
+          semgrep --config p/security-audit --config p/kotlin --config p/secrets --error .
 
   zizmor:
     name: zizmor
