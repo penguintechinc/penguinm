@@ -1021,7 +1021,7 @@ class GazerFlutterApi(private val binaryMessenger: BinaryMessenger, private val 
           }
         } else {
           continuation.resumeWithException(PipelinePigeonUtils.createConnectionError(channelName))
-        } 
+        }
       }
     }
   }
@@ -1041,7 +1041,7 @@ class GazerFlutterApi(private val binaryMessenger: BinaryMessenger, private val 
           }
         } else {
           continuation.resumeWithException(PipelinePigeonUtils.createConnectionError(channelName))
-        } 
+        }
       }
     }
   }
@@ -1061,7 +1061,7 @@ class GazerFlutterApi(private val binaryMessenger: BinaryMessenger, private val 
           }
         } else {
           continuation.resumeWithException(PipelinePigeonUtils.createConnectionError(channelName))
-        } 
+        }
       }
     }
   }
@@ -1081,7 +1081,7 @@ class GazerFlutterApi(private val binaryMessenger: BinaryMessenger, private val 
           }
         } else {
           continuation.resumeWithException(PipelinePigeonUtils.createConnectionError(channelName))
-        } 
+        }
       }
     }
   }
@@ -1101,7 +1101,7 @@ class GazerFlutterApi(private val binaryMessenger: BinaryMessenger, private val 
           }
         } else {
           continuation.resumeWithException(PipelinePigeonUtils.createConnectionError(channelName))
-        } 
+        }
       }
     }
   }
