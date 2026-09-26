@@ -10,37 +10,40 @@ import 'package:gazer/services/license_client.dart';
 class MockLicenseClient extends Mock implements LicenseClient {}
 
 void main() {
-  test('license() force-enables DebugOverrides.flags, status valid, lastFetched set, only when enabled', () async {
-    final MockLicenseClient client = MockLicenseClient();
-    final LicenseState base = const LicenseState(
-      status: LicenseStatus.unknown,
-      flags: <String, bool>{},
-      lastFetched: null,
-      deviceId: 'test-device-0001',
-    );
-    when(() => client.validateAndFetchFlags()).thenAnswer((_) async => base);
+  test(
+    'license() force-enables DebugOverrides.flags, status valid, lastFetched set, only when enabled',
+    () async {
+      final MockLicenseClient client = MockLicenseClient();
+      final LicenseState base = const LicenseState(
+        status: LicenseStatus.unknown,
+        flags: <String, bool>{},
+        lastFetched: null,
+        deviceId: 'test-device-0001',
+      );
+      when(() => client.validateAndFetchFlags()).thenAnswer((_) async => base);
 
-    final ProviderContainer container = ProviderContainer(
-      overrides: [licenseClientProvider.overrideWith((ref) async => client)],
-    );
-    addTearDown(container.dispose);
+      final ProviderContainer container = ProviderContainer(
+        overrides: [licenseClientProvider.overrideWith((ref) async => client)],
+      );
+      addTearDown(container.dispose);
 
-    final LicenseState result = await container.read(licenseProvider.future);
+      final LicenseState result = await container.read(licenseProvider.future);
 
-    if (DebugOverrides.enabled) {
-      expect(result.status, LicenseStatus.valid);
-      expect(result.lastFetched, isNotNull);
-      for (final String key in DebugOverrides.flags) {
-        expect(
-          result.flags[key],
-          isTrue,
-          reason: 'flag $key must be forced ON',
-        );
+      if (DebugOverrides.enabled) {
+        expect(result.status, LicenseStatus.valid);
+        expect(result.lastFetched, isNotNull);
+        for (final String key in DebugOverrides.flags) {
+          expect(
+            result.flags[key],
+            isTrue,
+            reason: 'flag $key must be forced ON',
+          );
+        }
+      } else {
+        expect(result.status, base.status);
+        expect(result.flags, equals(base.flags));
+        expect(result.lastFetched, base.lastFetched);
       }
-    } else {
-      expect(result.status, base.status);
-      expect(result.flags, equals(base.flags));
-      expect(result.lastFetched, base.lastFetched);
-    }
-  });
+    },
+  );
 }

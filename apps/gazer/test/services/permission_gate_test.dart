@@ -75,18 +75,21 @@ void main() {
     },
   );
 
-  test('a plain denial with nothing permanently denied -> PermissionOutcome.denied', () async {
-    when(() => platform.requestPermissions(any())).thenAnswer(
-      (_) async => <Permission, PermissionStatus>{
-        Permission.camera: PermissionStatus.denied,
-        Permission.microphone: PermissionStatus.granted,
-      },
-    );
+  test(
+    'a plain denial with nothing permanently denied -> PermissionOutcome.denied',
+    () async {
+      when(() => platform.requestPermissions(any())).thenAnswer(
+        (_) async => <Permission, PermissionStatus>{
+          Permission.camera: PermissionStatus.denied,
+          Permission.microphone: PermissionStatus.granted,
+        },
+      );
 
-    final result = await buildGate(sdkInt: 30).ensureLivePermissions();
+      final result = await buildGate(sdkInt: 30).ensureLivePermissions();
 
-    expect(result, PermissionOutcome.denied);
-  });
+      expect(result, PermissionOutcome.denied);
+    },
+  );
 
   test(
     'sdkInt >= 33 includes Permission.notification in the request',
@@ -102,9 +105,9 @@ void main() {
       await buildGate(sdkInt: 33).ensureLivePermissions();
 
       final requested =
-          verify(() => platform.requestPermissions(captureAny()))
-                  .captured
-                  .single
+          verify(
+                () => platform.requestPermissions(captureAny()),
+              ).captured.single
               as List<Permission>;
       expect(requested, contains(Permission.notification));
     },
@@ -126,23 +129,30 @@ void main() {
     expect(requested, isNot(contains(Permission.notification)));
   });
 
-  test('requestPermissions throwing PlatformException -> PermissionOutcome.denied, never rethrows', () async {
-    when(() => platform.requestPermissions(any()))
-        .thenThrow(PlatformException(code: 'x'));
+  test(
+    'requestPermissions throwing PlatformException -> PermissionOutcome.denied, never rethrows',
+    () async {
+      when(
+        () => platform.requestPermissions(any()),
+      ).thenThrow(PlatformException(code: 'x'));
 
-    final result = await buildGate(sdkInt: 30).ensureLivePermissions();
+      final result = await buildGate(sdkInt: 30).ensureLivePermissions();
 
-    expect(result, PermissionOutcome.denied);
-  });
+      expect(result, PermissionOutcome.denied);
+    },
+  );
 
-  test('sdkInt throwing -> PermissionOutcome.denied, never rethrows, and never calls requestPermissions', () async {
-    final gate = PermissionHandlerGate(
-      sdkInt: () async => throw StateError('device_info_plus unavailable'),
-    );
+  test(
+    'sdkInt throwing -> PermissionOutcome.denied, never rethrows, and never calls requestPermissions',
+    () async {
+      final gate = PermissionHandlerGate(
+        sdkInt: () async => throw StateError('device_info_plus unavailable'),
+      );
 
-    final result = await gate.ensureLivePermissions();
+      final result = await gate.ensureLivePermissions();
 
-    expect(result, PermissionOutcome.denied);
-    verifyNever(() => platform.requestPermissions(any()));
-  });
+      expect(result, PermissionOutcome.denied);
+      verifyNever(() => platform.requestPermissions(any()));
+    },
+  );
 }

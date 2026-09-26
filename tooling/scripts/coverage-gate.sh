@@ -96,9 +96,13 @@ for pkg in $candidates; do
   # Intentional word splitting: awk prints exactly "<lf> <lh>" (two
   # integers), and this is Bash 3.2 so there is no array to unpack into.
   # shellcheck disable=SC2046
+  # Generated Dart (codegen output) is excluded from the gate — coverage
+  # measures hand-written code. Skips *.g.dart / *.freezed.dart (json/freezed/
+  # pigeon) and gen-l10n app_localizations*.dart. SF: names the current file.
   set -- $(awk -F: '
-    /^LF:/ { lf += $2 }
-    /^LH:/ { lh += $2 }
+    /^SF:/ { gen = ($2 ~ /\.g\.dart$/ || $2 ~ /\.freezed\.dart$/ || $2 ~ /app_localizations[^\/]*\.dart$/) ? 1 : 0 }
+    /^LF:/ { if (!gen) lf += $2 }
+    /^LH:/ { if (!gen) lh += $2 }
     END { printf "%d %d", lf+0, lh+0 }
   ' "$lcov")
   lf="$1"

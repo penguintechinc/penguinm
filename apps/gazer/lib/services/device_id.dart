@@ -1,9 +1,3 @@
-// ignore_for_file: prefer_initializing_formals
-// The public constructor parameter names (`deviceInfo`, `packageInfo`) are
-// fixed by the design contract and differ from the private field names
-// (`_deviceInfo`, `_packageInfo`) by more than the leading underscore
-// convention allows for an initializing formal, so an explicit assignment
-// list is required here instead of `this._deviceInfo`.
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
@@ -26,10 +20,9 @@ abstract class DeviceIdProvider {
 /// contract's exact constructor signature.
 class AndroidDeviceIdProvider implements DeviceIdProvider {
   AndroidDeviceIdProvider({
-    required DeviceInfoPlugin deviceInfo,
-    required PackageInfo packageInfo,
-  }) : _deviceInfo = deviceInfo,
-       _packageInfo = packageInfo;
+    required this._deviceInfo,
+    required this._packageInfo,
+  });
 
   final DeviceInfoPlugin _deviceInfo;
   final PackageInfo _packageInfo;

@@ -12,25 +12,34 @@ import 'package:gazer/config/debug_overrides.dart';
 /// code-review guard documented in Step 6 — it cannot be proven by a
 /// single `flutter test` invocation alone.
 void main() {
-  test('kDebugMode is true under flutter test (sanity: proves the harness limitation, not a DebugOverrides property)', () {
-    expect(kDebugMode, isTrue);
-  });
+  test(
+    'kDebugMode is true under flutter test (sanity: proves the harness limitation, not a DebugOverrides property)',
+    () {
+      expect(kDebugMode, isTrue);
+    },
+  );
 
-  test('enabled is exactly flagsOverride.isNotEmpty given kDebugMode is always true here', () {
-    expect(
-      DebugOverrides.enabled,
-      equals(DebugOverrides.flagsOverride.isNotEmpty),
-    );
-  });
+  test(
+    'enabled is exactly flagsOverride.isNotEmpty given kDebugMode is always true here',
+    () {
+      expect(
+        DebugOverrides.enabled,
+        equals(DebugOverrides.flagsOverride.isNotEmpty),
+      );
+    },
+  );
 
-  test('flags parses the currently-configured define into a trimmed, non-empty-only set', () {
-    final Set<String> expected = DebugOverrides.flagsOverride
-        .split(',')
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toSet();
-    expect(DebugOverrides.flags, equals(expected));
-  });
+  test(
+    'flags parses the currently-configured define into a trimmed, non-empty-only set',
+    () {
+      final Set<String> expected = DebugOverrides.flagsOverride
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toSet();
+      expect(DebugOverrides.flags, equals(expected));
+    },
+  );
 
   test(
     'default invocation (no define) yields empty flags and enabled == false',

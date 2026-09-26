@@ -1,4 +1,6 @@
-import 'package:dio/dio.dart';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 
 import '../models/update_info.dart';
 
@@ -10,13 +12,13 @@ import '../models/update_info.dart';
 /// throwing — an update notice is never worth crashing over.
 class UpdateChecker {
   UpdateChecker({
-    required this._dio,
+    required this._client,
     required this.currentVersion,
     this.releasesUrl =
         'https://api.github.com/repos/penguintechinc/waddlebot/releases',
   });
 
-  final Dio _dio;
+  final http.Client _client;
 
   /// The running app's version, from `package_info_plus`.
   final String currentVersion;
@@ -31,8 +33,8 @@ class UpdateChecker {
   /// than [currentVersion], or `null` when up to date or on any error.
   Future<UpdateInfo?> check() async {
     try {
-      final response = await _dio.get<List<dynamic>>(releasesUrl);
-      final releases = response.data as List<dynamic>;
+      final response = await _client.get(Uri.parse(releasesUrl));
+      final releases = jsonDecode(response.body) as List<dynamic>;
 
       String? bestTag;
       List<int>? bestVersion;

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+import 'package:http/http.dart' as http;
 
 import '../services/gazer_log.dart';
 import 'otlp_http_exporter.dart';
@@ -208,7 +208,7 @@ class GazerTelemetry {
   );
 
   static OtlpHttpExporter _exporter = OtlpHttpExporter(
-    dio: Dio(),
+    client: http.Client(),
     endpoint: '',
     headers: const <String, String>{},
   );
@@ -268,15 +268,15 @@ class GazerTelemetry {
   /// Applies [config] and rebuilds the exporter; starts the periodic flush
   /// scheduler on first call. Safe to call repeatedly -- e.g. every time
   /// Settings > Developer > Telemetry endpoint is saved, so a change takes
-  /// effect without an app restart. The *previous* exporter's [Dio] client
-  /// is closed (aborting any in-flight request) after the new one is
-  /// installed, so repeated reloads never accumulate open HTTP clients or
-  /// keep emitting through a stale client pointed at the old endpoint.
-  static void init(TelemetryConfig config, {Dio? dio}) {
+  /// effect without an app restart. The *previous* exporter's [http.Client]
+  /// is closed after the new one is installed, so repeated reloads never
+  /// accumulate open HTTP clients or keep emitting through a stale client
+  /// pointed at the old endpoint.
+  static void init(TelemetryConfig config, {http.Client? client}) {
     _config = config;
     final OtlpHttpExporter previousExporter = _exporter;
     _exporter = OtlpHttpExporter(
-      dio: dio ?? Dio(),
+      client: client ?? http.Client(),
       endpoint: config.endpoint,
       headers: config.headers,
     );
@@ -575,7 +575,7 @@ class GazerTelemetry {
     );
     _exporter.close();
     _exporter = OtlpHttpExporter(
-      dio: Dio(),
+      client: http.Client(),
       endpoint: '',
       headers: const <String, String>{},
     );

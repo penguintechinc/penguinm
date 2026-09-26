@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gazer/telemetry/gazer_telemetry.dart';
 import 'package:gazer/telemetry/telemetry_config.dart';
@@ -20,171 +20,179 @@ class _ThrowingToString {
 void main() {
   tearDown(GazerTelemetry.resetForTest);
 
-  test('one log, one counter, one histogram, one span all reach a local OTLP/HTTP JSON sink', () async {
-    int logRecords = 0;
-    int metricDataPoints = 0;
-    int histogramDataPoints = 0;
-    int spans = 0;
-    final List<Map<String, dynamic>> spanPayloads = <Map<String, dynamic>>[];
+  test(
+    'one log, one counter, one histogram, one span all reach a local OTLP/HTTP JSON sink',
+    () async {
+      int logRecords = 0;
+      int metricDataPoints = 0;
+      int histogramDataPoints = 0;
+      int spans = 0;
+      final List<Map<String, dynamic>> spanPayloads = <Map<String, dynamic>>[];
 
-    final HttpServer server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final subscription = server.listen((HttpRequest request) async {
-      final String body = await utf8.decoder.bind(request).join();
-      final Map<String, dynamic> decoded =
-          jsonDecode(body) as Map<String, dynamic>;
-      if (request.uri.path == '/v1/logs') {
-        for (final rl in decoded['resourceLogs'] as List) {
-          for (final sl in (rl as Map<String, dynamic>)['scopeLogs'] as List) {
-            logRecords +=
-                ((sl as Map<String, dynamic>)['logRecords'] as List).length;
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final subscription = server.listen((HttpRequest request) async {
+        final String body = await utf8.decoder.bind(request).join();
+        final Map<String, dynamic> decoded =
+            jsonDecode(body) as Map<String, dynamic>;
+        if (request.uri.path == '/v1/logs') {
+          for (final rl in decoded['resourceLogs'] as List) {
+            for (final sl
+                in (rl as Map<String, dynamic>)['scopeLogs'] as List) {
+              logRecords +=
+                  ((sl as Map<String, dynamic>)['logRecords'] as List).length;
+            }
           }
-        }
-      } else if (request.uri.path == '/v1/metrics') {
-        for (final rm in decoded['resourceMetrics'] as List) {
-          for (final sm
-              in (rm as Map<String, dynamic>)['scopeMetrics'] as List) {
-            for (final metric
-                in (sm as Map<String, dynamic>)['metrics'] as List) {
-              final Map<String, dynamic> m = metric as Map<String, dynamic>;
-              final Map<String, dynamic> shape =
-                  (m['histogram'] ?? m['sum'] ?? m['gauge'])
-                      as Map<String, dynamic>;
-              final int count = (shape['dataPoints'] as List).length;
-              metricDataPoints += count;
-              if (m.containsKey('histogram')) histogramDataPoints += count;
+        } else if (request.uri.path == '/v1/metrics') {
+          for (final rm in decoded['resourceMetrics'] as List) {
+            for (final sm
+                in (rm as Map<String, dynamic>)['scopeMetrics'] as List) {
+              for (final metric
+                  in (sm as Map<String, dynamic>)['metrics'] as List) {
+                final Map<String, dynamic> m = metric as Map<String, dynamic>;
+                final Map<String, dynamic> shape =
+                    (m['histogram'] ?? m['sum'] ?? m['gauge'])
+                        as Map<String, dynamic>;
+                final int count = (shape['dataPoints'] as List).length;
+                metricDataPoints += count;
+                if (m.containsKey('histogram')) histogramDataPoints += count;
+              }
+            }
+          }
+        } else if (request.uri.path == '/v1/traces') {
+          for (final rs in decoded['resourceSpans'] as List) {
+            for (final ss
+                in (rs as Map<String, dynamic>)['scopeSpans'] as List) {
+              final List<dynamic> batch =
+                  (ss as Map<String, dynamic>)['spans'] as List;
+              spans += batch.length;
+              for (final span in batch) {
+                spanPayloads.add(span as Map<String, dynamic>);
+              }
             }
           }
         }
-      } else if (request.uri.path == '/v1/traces') {
-        for (final rs in decoded['resourceSpans'] as List) {
-          for (final ss in (rs as Map<String, dynamic>)['scopeSpans'] as List) {
-            final List<dynamic> batch =
-                (ss as Map<String, dynamic>)['spans'] as List;
-            spans += batch.length;
-            for (final span in batch) {
-              spanPayloads.add(span as Map<String, dynamic>);
-            }
-          }
-        }
+        request.response.statusCode = 200;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await server.close(force: true);
+        await subscription.cancel();
+      });
+
+      GazerTelemetry.init(
+        TelemetryConfig(
+          endpoint: 'http://127.0.0.1:${server.port}',
+          protocol: 'http/json',
+          headers: const <String, String>{},
+          serviceName: 'gazer-test',
+          serviceVersion: '0.0.0',
+          deploymentEnvironment: 'test',
+        ),
+        client: http.Client(),
+      );
+
+      GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{
+        'k': 'v',
+      });
+      GazerTelemetry.counter('test.counter');
+      GazerTelemetry.histogram('test.histogram', 42);
+      final Span parentSpan = GazerTelemetry.startSpan('test.span');
+      GazerTelemetry.startSpan('test.span.child', parent: parentSpan).end();
+      parentSpan.end();
+
+      await GazerTelemetry.flush();
+      // Give the server's async request handler a moment to finish decoding
+      // before asserting -- flush()'s POST resolving does not guarantee the
+      // server-side listener callback above has run yet.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Required by the house telemetry test gate (critical-rules.md
+      // Verification Integrity: report the count examined, not just "no
+      // findings"). `make mobile-telemetry-check` greps this exact line and
+      // fails if any count is zero or the line is absent.
+      // ignore: avoid_print
+      print(
+        'telemetry sink received: logs=$logRecords metrics=$metricDataPoints '
+        'histograms=$histogramDataPoints spans=$spans',
+      );
+
+      expect(logRecords, greaterThanOrEqualTo(1));
+      expect(metricDataPoints, greaterThanOrEqualTo(1));
+      expect(histogramDataPoints, greaterThanOrEqualTo(1));
+      expect(spans, greaterThanOrEqualTo(1));
+
+      // OTLP requires a 16-byte traceId and an 8-byte spanId on every span,
+      // hex-encoded; a collector silently drops a span whose ids are missing
+      // or all-zero, so `spans >= 1` alone passed on a payload no real
+      // backend would accept. Asserted here rather than in
+      // `mobile-telemetry-check`'s grep, since that script is platform-owned.
+      final RegExp traceIdHex = RegExp(r'^[0-9a-f]{32}$');
+      final RegExp spanIdHex = RegExp(r'^[0-9a-f]{16}$');
+      for (final Map<String, dynamic> span in spanPayloads) {
+        expect(
+          span['traceId'],
+          matches(traceIdHex),
+          reason: 'span ${span['name']}',
+        );
+        expect(
+          span['spanId'],
+          matches(spanIdHex),
+          reason: 'span ${span['name']}',
+        );
+        expect(span['traceId'], isNot('0' * 32));
+        expect(span['spanId'], isNot('0' * 16));
+        expect(span['kind'], 1);
       }
-      request.response.statusCode = 200;
-      await request.response.close();
-    });
-    addTearDown(() async {
-      await server.close(force: true);
-      await subscription.cancel();
-    });
 
-    GazerTelemetry.init(
-      TelemetryConfig(
-        endpoint: 'http://127.0.0.1:${server.port}',
-        protocol: 'http/json',
-        headers: const <String, String>{},
-        serviceName: 'gazer-test',
-        serviceVersion: '0.0.0',
-        deploymentEnvironment: 'test',
-      ),
-      dio: Dio(),
-    );
-
-    GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{
-      'k': 'v',
-    });
-    GazerTelemetry.counter('test.counter');
-    GazerTelemetry.histogram('test.histogram', 42);
-    final Span parentSpan = GazerTelemetry.startSpan('test.span');
-    GazerTelemetry.startSpan('test.span.child', parent: parentSpan).end();
-    parentSpan.end();
-
-    await GazerTelemetry.flush();
-    // Give the server's async request handler a moment to finish decoding
-    // before asserting -- flush()'s POST resolving does not guarantee the
-    // server-side listener callback above has run yet.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-
-    // Required by the house telemetry test gate (critical-rules.md
-    // Verification Integrity: report the count examined, not just "no
-    // findings"). `make mobile-telemetry-check` greps this exact line and
-    // fails if any count is zero or the line is absent.
-    // ignore: avoid_print
-    print(
-      'telemetry sink received: logs=$logRecords metrics=$metricDataPoints '
-      'histograms=$histogramDataPoints spans=$spans',
-    );
-
-    expect(logRecords, greaterThanOrEqualTo(1));
-    expect(metricDataPoints, greaterThanOrEqualTo(1));
-    expect(histogramDataPoints, greaterThanOrEqualTo(1));
-    expect(spans, greaterThanOrEqualTo(1));
-
-    // OTLP requires a 16-byte traceId and an 8-byte spanId on every span,
-    // hex-encoded; a collector silently drops a span whose ids are missing
-    // or all-zero, so `spans >= 1` alone passed on a payload no real
-    // backend would accept. Asserted here rather than in
-    // `mobile-telemetry-check`'s grep, since that script is platform-owned.
-    final RegExp traceIdHex = RegExp(r'^[0-9a-f]{32}$');
-    final RegExp spanIdHex = RegExp(r'^[0-9a-f]{16}$');
-    for (final Map<String, dynamic> span in spanPayloads) {
-      expect(
-        span['traceId'],
-        matches(traceIdHex),
-        reason: 'span ${span['name']}',
+      // prepare->start style nesting: the child joins the parent's trace and
+      // names it as its parent, so the pair reads as one trace.
+      final Map<String, dynamic> parent = spanPayloads.firstWhere(
+        (Map<String, dynamic> s) => s['name'] == 'test.span',
       );
-      expect(
-        span['spanId'],
-        matches(spanIdHex),
-        reason: 'span ${span['name']}',
+      final Map<String, dynamic> child = spanPayloads.firstWhere(
+        (Map<String, dynamic> s) => s['name'] == 'test.span.child',
       );
-      expect(span['traceId'], isNot('0' * 32));
-      expect(span['spanId'], isNot('0' * 16));
-      expect(span['kind'], 1);
-    }
+      expect(child['traceId'], parent['traceId']);
+      expect(child['parentSpanId'], parent['spanId']);
+      expect(parent.containsKey('parentSpanId'), isFalse);
+      expect(child['spanId'], isNot(parent['spanId']));
+    },
+  );
 
-    // prepare->start style nesting: the child joins the parent's trace and
-    // names it as its parent, so the pair reads as one trace.
-    final Map<String, dynamic> parent = spanPayloads.firstWhere(
-      (Map<String, dynamic> s) => s['name'] == 'test.span',
-    );
-    final Map<String, dynamic> child = spanPayloads.firstWhere(
-      (Map<String, dynamic> s) => s['name'] == 'test.span.child',
-    );
-    expect(child['traceId'], parent['traceId']);
-    expect(child['parentSpanId'], parent['spanId']);
-    expect(parent.containsKey('parentSpanId'), isFalse);
-    expect(child['spanId'], isNot(parent['spanId']));
-  });
+  test(
+    'a dead endpoint (connection refused) never throws and increments exportFailures',
+    () async {
+      // Bind then immediately close a server to obtain a port nothing is
+      // listening on -- guarantees a real connection-refused, not a flaky
+      // guessed-unused-port.
+      final HttpServer probe = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final int deadPort = probe.port;
+      await probe.close(force: true);
 
-  test('a dead endpoint (connection refused) never throws and increments exportFailures', () async {
-    // Bind then immediately close a server to obtain a port nothing is
-    // listening on -- guarantees a real connection-refused, not a flaky
-    // guessed-unused-port.
-    final HttpServer probe = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final int deadPort = probe.port;
-    await probe.close(force: true);
+      GazerTelemetry.init(
+        TelemetryConfig(
+          endpoint: 'http://127.0.0.1:$deadPort',
+          protocol: 'http/json',
+          headers: const <String, String>{},
+          serviceName: 'gazer-test',
+          serviceVersion: '0.0.0',
+          deploymentEnvironment: 'test',
+        ),
+        client: http.Client(),
+      );
 
-    GazerTelemetry.init(
-      TelemetryConfig(
-        endpoint: 'http://127.0.0.1:$deadPort',
-        protocol: 'http/json',
-        headers: const <String, String>{},
-        serviceName: 'gazer-test',
-        serviceVersion: '0.0.0',
-        deploymentEnvironment: 'test',
-      ),
-      dio: Dio(),
-    );
+      GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
+      await expectLater(GazerTelemetry.flush(), completes);
 
-    GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
-    await expectLater(GazerTelemetry.flush(), completes);
-
-    expect(GazerTelemetry.exportFailures, greaterThanOrEqualTo(1));
-  });
+      expect(GazerTelemetry.exportFailures, greaterThanOrEqualTo(1));
+    },
+  );
 
   test('an empty endpoint makes zero HTTP calls', () async {
     int requestsReceived = 0;
@@ -211,7 +219,7 @@ void main() {
         serviceVersion: '0.0.0',
         deploymentEnvironment: 'test',
       ),
-      dio: Dio(),
+      client: http.Client(),
     );
 
     GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
@@ -222,171 +230,179 @@ void main() {
     expect(requestsReceived, 0);
   });
 
-  test('a poisoned log batch is dropped after one encode failure, and a later good record still exports', () async {
-    int logRecords = 0;
-    int metricDataPoints = 0;
+  test(
+    'a poisoned log batch is dropped after one encode failure, and a later good record still exports',
+    () async {
+      int logRecords = 0;
+      int metricDataPoints = 0;
 
-    final HttpServer server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final subscription = server.listen((HttpRequest request) async {
-      final String body = await utf8.decoder.bind(request).join();
-      final Map<String, dynamic> decoded =
-          jsonDecode(body) as Map<String, dynamic>;
-      if (request.uri.path == '/v1/logs') {
-        for (final rl in decoded['resourceLogs'] as List) {
-          for (final sl in (rl as Map<String, dynamic>)['scopeLogs'] as List) {
-            logRecords +=
-                ((sl as Map<String, dynamic>)['logRecords'] as List).length;
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final subscription = server.listen((HttpRequest request) async {
+        final String body = await utf8.decoder.bind(request).join();
+        final Map<String, dynamic> decoded =
+            jsonDecode(body) as Map<String, dynamic>;
+        if (request.uri.path == '/v1/logs') {
+          for (final rl in decoded['resourceLogs'] as List) {
+            for (final sl
+                in (rl as Map<String, dynamic>)['scopeLogs'] as List) {
+              logRecords +=
+                  ((sl as Map<String, dynamic>)['logRecords'] as List).length;
+            }
+          }
+        } else if (request.uri.path == '/v1/metrics') {
+          for (final rm in decoded['resourceMetrics'] as List) {
+            for (final sm
+                in (rm as Map<String, dynamic>)['scopeMetrics'] as List) {
+              metricDataPoints +=
+                  ((sm as Map<String, dynamic>)['metrics'] as List).length;
+            }
           }
         }
-      } else if (request.uri.path == '/v1/metrics') {
-        for (final rm in decoded['resourceMetrics'] as List) {
-          for (final sm
-              in (rm as Map<String, dynamic>)['scopeMetrics'] as List) {
-            metricDataPoints +=
-                ((sm as Map<String, dynamic>)['metrics'] as List).length;
-          }
-        }
-      }
-      request.response.statusCode = 200;
-      await request.response.close();
-    });
-    addTearDown(() async {
-      await server.close(force: true);
-      await subscription.cancel();
-    });
+        request.response.statusCode = 200;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await server.close(force: true);
+        await subscription.cancel();
+      });
 
-    GazerTelemetry.init(
-      TelemetryConfig(
-        endpoint: 'http://127.0.0.1:${server.port}',
-        protocol: 'http/json',
-        headers: const <String, String>{},
-        serviceName: 'gazer-test',
-        serviceVersion: '0.0.0',
-        deploymentEnvironment: 'test',
-      ),
-      dio: Dio(),
-    );
+      GazerTelemetry.init(
+        TelemetryConfig(
+          endpoint: 'http://127.0.0.1:${server.port}',
+          protocol: 'http/json',
+          headers: const <String, String>{},
+          serviceName: 'gazer-test',
+          serviceVersion: '0.0.0',
+          deploymentEnvironment: 'test',
+        ),
+        client: http.Client(),
+      );
 
-    GazerTelemetry.recordLog('info', 'test.log', <String, Object?>{
-      'bad': _ThrowingToString(),
-    });
-    GazerTelemetry.counter('test.counter');
+      GazerTelemetry.recordLog('info', 'test.log', <String, Object?>{
+        'bad': _ThrowingToString(),
+      });
+      GazerTelemetry.counter('test.counter');
 
-    // The poisoned log batch's encoding throws inside OtlpHttpExporter
-    // .post's guard; flush() itself must still complete normally, and
-    // an encode failure -- unlike a transport failure -- drops the
-    // batch instead of retaining it for a doomed-to-repeat retry.
-    await expectLater(GazerTelemetry.flush(), completes);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+      // The poisoned log batch's encoding throws inside OtlpHttpExporter
+      // .post's guard; flush() itself must still complete normally, and
+      // an encode failure -- unlike a transport failure -- drops the
+      // batch instead of retaining it for a doomed-to-repeat retry.
+      await expectLater(GazerTelemetry.flush(), completes);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    // Dropped, not retried: exactly one encode failure, nothing
-    // reached the log sink (the batch never survived encoding), and
-    // the counter -- an unrelated signal type flushed in the same
-    // cycle -- still exported normally.
-    expect(GazerTelemetry.encodeFailures, 1);
-    expect(logRecords, 0);
-    expect(metricDataPoints, greaterThanOrEqualTo(1));
+      // Dropped, not retried: exactly one encode failure, nothing
+      // reached the log sink (the batch never survived encoding), and
+      // the counter -- an unrelated signal type flushed in the same
+      // cycle -- still exported normally.
+      expect(GazerTelemetry.encodeFailures, 1);
+      expect(logRecords, 0);
+      expect(metricDataPoints, greaterThanOrEqualTo(1));
 
-    // The poisoned batch is gone from the buffer (dropped, not kept),
-    // so a newly appended, well-formed log record exports cleanly on
-    // the very next flush -- proving the earlier failure did not
-    // permanently wedge this signal type.
-    GazerTelemetry.recordLog('info', 'test.log.good', const <String, Object?>{
-      'k': 'v',
-    });
-    await expectLater(GazerTelemetry.flush(), completes);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+      // The poisoned batch is gone from the buffer (dropped, not kept),
+      // so a newly appended, well-formed log record exports cleanly on
+      // the very next flush -- proving the earlier failure did not
+      // permanently wedge this signal type.
+      GazerTelemetry.recordLog('info', 'test.log.good', const <String, Object?>{
+        'k': 'v',
+      });
+      await expectLater(GazerTelemetry.flush(), completes);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    expect(logRecords, greaterThanOrEqualTo(1));
-    // No new encode failure from the second, well-formed flush.
-    expect(GazerTelemetry.encodeFailures, 1);
-  });
-
-  test('a transport failure (connection refused) retains the batch, which exports once the collector is reachable', () async {
-    // Bind then immediately close a server to obtain a port nothing is
-    // listening on -- guarantees a real connection-refused, not a
-    // flaky guessed-unused-port.
-    final HttpServer probe = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final int deadPort = probe.port;
-    await probe.close(force: true);
-
-    GazerTelemetry.init(
-      TelemetryConfig(
-        endpoint: 'http://127.0.0.1:$deadPort',
-        protocol: 'http/json',
-        headers: const <String, String>{},
-        serviceName: 'gazer-test',
-        serviceVersion: '0.0.0',
-        deploymentEnvironment: 'test',
-      ),
-      dio: Dio(),
-    );
-
-    GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{
-      'k': 'v',
-    });
-    await expectLater(GazerTelemetry.flush(), completes);
-
-    // Transient failure: retained for retry, not dropped -- the
-    // opposite of an encode failure.
-    expect(GazerTelemetry.exportFailures, greaterThanOrEqualTo(1));
-    expect(GazerTelemetry.encodeFailures, 0);
-
-    // The collector "comes back": point telemetry at a real server and
-    // flush again -- the same retained record now exports.
-    int logRecords = 0;
-    final HttpServer server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final subscription = server.listen((HttpRequest request) async {
-      final String body = await utf8.decoder.bind(request).join();
-      final Map<String, dynamic> decoded =
-          jsonDecode(body) as Map<String, dynamic>;
-      if (request.uri.path == '/v1/logs') {
-        for (final rl in decoded['resourceLogs'] as List) {
-          for (final sl in (rl as Map<String, dynamic>)['scopeLogs'] as List) {
-            logRecords +=
-                ((sl as Map<String, dynamic>)['logRecords'] as List).length;
-          }
-        }
-      }
-      request.response.statusCode = 200;
-      await request.response.close();
-    });
-    addTearDown(() async {
-      await server.close(force: true);
-      await subscription.cancel();
-    });
-
-    GazerTelemetry.init(
-      TelemetryConfig(
-        endpoint: 'http://127.0.0.1:${server.port}',
-        protocol: 'http/json',
-        headers: const <String, String>{},
-        serviceName: 'gazer-test',
-        serviceVersion: '0.0.0',
-        deploymentEnvironment: 'test',
-      ),
-      dio: Dio(),
-    );
-
-    await GazerTelemetry.flush();
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-
-    expect(logRecords, greaterThanOrEqualTo(1));
-  });
+      expect(logRecords, greaterThanOrEqualTo(1));
+      // No new encode failure from the second, well-formed flush.
+      expect(GazerTelemetry.encodeFailures, 1);
+    },
+  );
 
   test(
-    'reloading telemetry config closes the previous exporter\'s Dio client',
+    'a transport failure (connection refused) retains the batch, which exports once the collector is reachable',
     () async {
-      final Dio firstDio = Dio();
+      // Bind then immediately close a server to obtain a port nothing is
+      // listening on -- guarantees a real connection-refused, not a
+      // flaky guessed-unused-port.
+      final HttpServer probe = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final int deadPort = probe.port;
+      await probe.close(force: true);
+
+      GazerTelemetry.init(
+        TelemetryConfig(
+          endpoint: 'http://127.0.0.1:$deadPort',
+          protocol: 'http/json',
+          headers: const <String, String>{},
+          serviceName: 'gazer-test',
+          serviceVersion: '0.0.0',
+          deploymentEnvironment: 'test',
+        ),
+        client: http.Client(),
+      );
+
+      GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{
+        'k': 'v',
+      });
+      await expectLater(GazerTelemetry.flush(), completes);
+
+      // Transient failure: retained for retry, not dropped -- the
+      // opposite of an encode failure.
+      expect(GazerTelemetry.exportFailures, greaterThanOrEqualTo(1));
+      expect(GazerTelemetry.encodeFailures, 0);
+
+      // The collector "comes back": point telemetry at a real server and
+      // flush again -- the same retained record now exports.
+      int logRecords = 0;
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final subscription = server.listen((HttpRequest request) async {
+        final String body = await utf8.decoder.bind(request).join();
+        final Map<String, dynamic> decoded =
+            jsonDecode(body) as Map<String, dynamic>;
+        if (request.uri.path == '/v1/logs') {
+          for (final rl in decoded['resourceLogs'] as List) {
+            for (final sl
+                in (rl as Map<String, dynamic>)['scopeLogs'] as List) {
+              logRecords +=
+                  ((sl as Map<String, dynamic>)['logRecords'] as List).length;
+            }
+          }
+        }
+        request.response.statusCode = 200;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await server.close(force: true);
+        await subscription.cancel();
+      });
+
+      GazerTelemetry.init(
+        TelemetryConfig(
+          endpoint: 'http://127.0.0.1:${server.port}',
+          protocol: 'http/json',
+          headers: const <String, String>{},
+          serviceName: 'gazer-test',
+          serviceVersion: '0.0.0',
+          deploymentEnvironment: 'test',
+        ),
+        client: http.Client(),
+      );
+
+      await GazerTelemetry.flush();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(logRecords, greaterThanOrEqualTo(1));
+    },
+  );
+
+  test(
+    'reloading telemetry config closes the previous exporter\'s http client',
+    () async {
+      final http.Client firstClient = http.Client();
       GazerTelemetry.init(
         const TelemetryConfig(
           endpoint: 'http://127.0.0.1:1',
@@ -396,7 +412,7 @@ void main() {
           serviceVersion: '0.0.0',
           deploymentEnvironment: 'test',
         ),
-        dio: firstDio,
+        client: firstClient,
       );
 
       GazerTelemetry.init(
@@ -408,16 +424,16 @@ void main() {
           serviceVersion: '0.0.0',
           deploymentEnvironment: 'test',
         ),
-        dio: Dio(),
+        client: http.Client(),
       );
 
       // The second init() call replaced GazerTelemetry's exporter and
-      // closed `firstDio` as a side effect -- using `firstDio` directly
-      // now throws (a closed Dio/HttpClient rejects new requests) rather
-      // than attempting a real network call, proving `close()` was
-      // actually invoked on the previous client, not just discarded.
+      // closed `firstClient` as a side effect -- using `firstClient`
+      // directly now throws ("Client is already closed") rather than
+      // attempting a real network call, proving `close()` was actually
+      // invoked on the previous client, not just discarded.
       await expectLater(
-        firstDio.get<dynamic>('http://127.0.0.1:1/'),
+        firstClient.get(Uri.parse('http://127.0.0.1:1/')),
         throwsA(anything),
       );
     },

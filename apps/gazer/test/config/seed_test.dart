@@ -58,16 +58,19 @@ void main() {
       );
     });
 
-    test('never overwrites a repository with non-default settings, even when GAZER_SEED=true', () async {
-      final GazerSettings customized = GazerSettings.defaults().copyWith(
-        target: const StreamTargetSettings(
-          url: 'rtmp://real-user-endpoint.example.com/live',
-        ),
-      );
-      final repo = _InMemorySettingsRepository(customized);
-      await applySeedIfRequested(repo);
-      expect(repo.saveCount, 0, reason: 'never clobber real saved settings');
-      expect(await repo.load(), customized);
-    });
+    test(
+      'never overwrites a repository with non-default settings, even when GAZER_SEED=true',
+      () async {
+        final GazerSettings customized = GazerSettings.defaults().copyWith(
+          target: const StreamTargetSettings(
+            url: 'rtmp://real-user-endpoint.example.com/live',
+          ),
+        );
+        final repo = _InMemorySettingsRepository(customized);
+        await applySeedIfRequested(repo);
+        expect(repo.saveCount, 0, reason: 'never clobber real saved settings');
+        expect(await repo.load(), customized);
+      },
+    );
   });
 }

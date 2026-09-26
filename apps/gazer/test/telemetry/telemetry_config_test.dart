@@ -29,26 +29,32 @@ void main() {
       },
     );
 
-    test('an empty settings endpoint falls back to the --dart-define value (empty when unset)', () {
-      final config = TelemetryConfig.resolve(
-        settingsEndpoint: '',
-        settingsHeadersJson: '',
-        serviceVersion: '1.2.3',
-      );
-      expect(config.endpoint, isEmpty);
-    });
+    test(
+      'an empty settings endpoint falls back to the --dart-define value (empty when unset)',
+      () {
+        final config = TelemetryConfig.resolve(
+          settingsEndpoint: '',
+          settingsHeadersJson: '',
+          serviceVersion: '1.2.3',
+        );
+        expect(config.endpoint, isEmpty);
+      },
+    );
 
-    test('settings headers parse as comma-separated key=value pairs and win over the define', () {
-      final config = TelemetryConfig.resolve(
-        settingsEndpoint: '',
-        settingsHeadersJson: 'authorization=Bearer abc,x-tenant=demo',
-        serviceVersion: '1.2.3',
-      );
-      expect(config.headers, {
-        'authorization': 'Bearer abc',
-        'x-tenant': 'demo',
-      });
-    });
+    test(
+      'settings headers parse as comma-separated key=value pairs and win over the define',
+      () {
+        final config = TelemetryConfig.resolve(
+          settingsEndpoint: '',
+          settingsHeadersJson: 'authorization=Bearer abc,x-tenant=demo',
+          serviceVersion: '1.2.3',
+        );
+        expect(config.headers, {
+          'authorization': 'Bearer abc',
+          'x-tenant': 'demo',
+        });
+      },
+    );
 
     test('a malformed header pair (no "=") is skipped, not thrown', () {
       final config = TelemetryConfig.resolve(
@@ -76,8 +82,9 @@ void main() {
         // entry is unreadable; awaited before runApp it used to leave a
         // black screen with no in-app recovery.
         when(() => prefs.getString(any())).thenAnswer((_) async => null);
-        when(() => secure.read(key: any(named: 'key')))
-            .thenThrow(PlatformException(code: 'Failed to decrypt'));
+        when(
+          () => secure.read(key: any(named: 'key')),
+        ).thenThrow(PlatformException(code: 'Failed to decrypt'));
 
         final TelemetryConfig config = await TelemetryConfig.load(
           prefs: prefs,
@@ -96,8 +103,9 @@ void main() {
         when(
           () => prefs.getString(any()),
         ).thenThrow(PlatformException(code: 'shared_preferences unavailable'));
-        when(() => secure.read(key: any(named: 'key')))
-            .thenAnswer((_) async => null);
+        when(
+          () => secure.read(key: any(named: 'key')),
+        ).thenAnswer((_) async => null);
 
         final TelemetryConfig config = await TelemetryConfig.load(
           prefs: prefs,
@@ -110,10 +118,12 @@ void main() {
     );
 
     test('both stores readable resolves the persisted overrides', () async {
-      when(() => prefs.getString(any()))
-          .thenAnswer((_) async => 'http://collector.example.com:4318');
-      when(() => secure.read(key: any(named: 'key')))
-          .thenAnswer((_) async => 'authorization=Bearer abc');
+      when(
+        () => prefs.getString(any()),
+      ).thenAnswer((_) async => 'http://collector.example.com:4318');
+      when(
+        () => secure.read(key: any(named: 'key')),
+      ).thenAnswer((_) async => 'authorization=Bearer abc');
 
       final TelemetryConfig config = await TelemetryConfig.load(
         prefs: prefs,
@@ -135,8 +145,9 @@ void main() {
       // test's writes out of the next one.
       prefs = useFakeSharedPreferences();
       secure = _MockSecureStorage();
-      when(() => secure.read(key: any(named: 'key')))
-          .thenAnswer((_) async => null);
+      when(
+        () => secure.read(key: any(named: 'key')),
+      ).thenAnswer((_) async => null);
     });
 
     test('a saved endpoint round-trips back out of load()', () async {

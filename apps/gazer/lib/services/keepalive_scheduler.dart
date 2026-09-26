@@ -18,12 +18,10 @@ import 'package:flutter/widgets.dart';
 /// stacking calls.
 class KeepaliveScheduler {
   KeepaliveScheduler({
-    required Future<void> Function() ping,
-    required Duration interval,
-    Timer Function(Duration, void Function(Timer)) periodic = Timer.periodic,
-  }) : _ping = ping, // ignore: prefer_initializing_formals
-       _interval = interval, // ignore: prefer_initializing_formals
-       _periodic = periodic; // ignore: prefer_initializing_formals
+    required this._ping,
+    required this._interval,
+    this._periodic = Timer.periodic,
+  });
 
   final Future<void> Function() _ping;
   final Duration _interval;

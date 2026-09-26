@@ -40,10 +40,11 @@ void main() {
       (invocation) async =>
           secureStore[invocation.namedArguments[#key] as String],
     );
-    when(() => secure.delete(key: any(named: 'key')))
-        .thenAnswer((invocation) async {
-          secureStore.remove(invocation.namedArguments[#key] as String);
-        });
+    when(() => secure.delete(key: any(named: 'key'))).thenAnswer((
+      invocation,
+    ) async {
+      secureStore.remove(invocation.namedArguments[#key] as String);
+    });
 
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();

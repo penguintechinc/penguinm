@@ -1,19 +1,17 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../telemetry/gazer_telemetry.dart';
 import '../telemetry/telemetry_config.dart';
 
-part 'telemetry_provider.g.dart';
-
 /// Loads the resolved [TelemetryConfig] (Settings override > --dart-define
 /// > default) and applies it via `GazerTelemetry.init` as a side effect --
 /// so simply reading this provider once is what turns telemetry on for the
-/// widget tree. `keepAlive: true`: telemetry must stay configured across
-/// every screen for the app's lifetime, same rationale as
-/// `licenseProvider`/`settingsNotifierProvider` (Task 12).
+/// widget tree. Not autoDispose: telemetry must stay configured across
+/// every screen for the app's lifetime, same rationale as `licenseProvider`/
+/// `settingsProvider`.
 ///
 /// Not directly unit-tested -- its body calls `PackageInfo.fromPlatform()`
 /// and touches real `shared_preferences`/`flutter_secure_storage` plugins,
@@ -21,8 +19,7 @@ part 'telemetry_provider.g.dart';
 /// tests (`SettingsScreen`/`StatusPanel`), matching the plan's established
 /// leaf-provider testing boundary (`licenseClientProvider`,
 /// `updateCheckerProvider`).
-@Riverpod(keepAlive: true)
-Future<TelemetryConfig> telemetryConfig(Ref ref) async {
+final telemetryConfigProvider = FutureProvider<TelemetryConfig>((ref) async {
   final PackageInfo packageInfo = await PackageInfo.fromPlatform();
   final TelemetryConfig config = await TelemetryConfig.load(
     prefs: SharedPreferencesAsync(),
@@ -36,7 +33,7 @@ Future<TelemetryConfig> telemetryConfig(Ref ref) async {
   // `pumpGazerApp` in widget tests, and one per container in production.
   ref.onDispose(GazerTelemetry.shutdown);
   return config;
-}
+});
 
 /// Live telemetry export health for the status panel.
 ///
@@ -49,8 +46,7 @@ Future<TelemetryConfig> telemetryConfig(Ref ref) async {
 /// reading it is what resolves and applies the config, and therefore what
 /// decides whether health starts out `disabled`. A widget watching this
 /// notifier gets that side effect transitively.
-@Riverpod(keepAlive: true)
-class TelemetryHealthNotifier extends _$TelemetryHealthNotifier {
+class TelemetryHealthNotifier extends Notifier<TelemetryHealth> {
   @override
   TelemetryHealth build() {
     ref.watch(telemetryConfigProvider);
@@ -60,3 +56,9 @@ class TelemetryHealthNotifier extends _$TelemetryHealthNotifier {
     return GazerTelemetry.health.value;
   }
 }
+
+/// Riverpod entry point for [TelemetryHealthNotifier].
+final telemetryHealthProvider =
+    NotifierProvider<TelemetryHealthNotifier, TelemetryHealth>(
+      TelemetryHealthNotifier.new,
+    );

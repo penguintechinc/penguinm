@@ -1,8 +1,8 @@
 /// Describes an available update, surfaced by `UpdateChecker` when the
 /// latest `gazer-v*` GitHub release tag is newer than the running app.
 ///
-/// Hand-written (not freezed): never persisted, and `Uri` has no built-in
-/// json_serializable converter, so JSON codegen would need a bespoke
+/// Hand-written, no code generation: never persisted, and `Uri` has no
+/// built-in JSON converter, so a codegen'd JSON codec would need a bespoke
 /// converter for no benefit — this is a display-only, in-memory value.
 class UpdateInfo {
   const UpdateInfo({

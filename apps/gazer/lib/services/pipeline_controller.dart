@@ -25,19 +25,11 @@ import 'target_validator.dart';
 /// boundary rule — the native side only reports facts and takes commands.
 class PipelineController {
   PipelineController({
-    required GazerHostApi host,
-    required NativeEventBridge events,
-    required ReconnectPolicy policy,
-    Future<void> Function(Duration) sleeper = Future.delayed,
-  })
-    // ignore: prefer_initializing_formals
-    : _host = host,
-       // ignore: prefer_initializing_formals
-       _events = events,
-       // ignore: prefer_initializing_formals
-       _policy = policy,
-       // ignore: prefer_initializing_formals
-       _sleeper = sleeper {
+    required this._host,
+    required this._events,
+    required this._policy,
+    this._sleeper = Future.delayed,
+  }) {
     _stateSub = _events.stateEvents.listen(_onNativeStateEvent);
     _statsSub = _events.stats.listen(_onNativeStats);
   }

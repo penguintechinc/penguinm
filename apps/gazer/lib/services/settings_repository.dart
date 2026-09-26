@@ -24,16 +24,7 @@ abstract class SettingsRepository {
 /// stream key, username, password) and `shared_preferences` (quality,
 /// audio, developer toggle) — never mixes the two.
 class SecureSettingsRepository implements SettingsRepository {
-  // Constructor params (secure, prefs) are the fixed public contract while
-  // the fields stay private (_secure, _prefs); an initializing formal
-  // (`this._secure`) would force the external param name to match the
-  // private field name, breaking the contract, so these are assigned
-  // explicitly instead.
-  SecureSettingsRepository({
-    required FlutterSecureStorage secure,
-    required SharedPreferencesAsync prefs,
-  }) : _secure = secure, // ignore: prefer_initializing_formals
-       _prefs = prefs; // ignore: prefer_initializing_formals
+  SecureSettingsRepository({required this._secure, required this._prefs});
 
   final FlutterSecureStorage _secure;
   final SharedPreferencesAsync _prefs;

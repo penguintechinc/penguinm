@@ -1,15 +1,17 @@
-import 'package:dio/dio.dart';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gazer/config/constants.dart';
 import 'package:gazer/models/license_state.dart';
 import 'package:gazer/services/device_id.dart';
 import 'package:gazer/services/license_client.dart';
+import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
-class _MockDio extends Mock implements Dio {}
+class _MockClient extends Mock implements http.Client {}
 
 class _FakeDeviceIdProvider implements DeviceIdProvider {
   @override
@@ -23,15 +25,15 @@ class _ThrowingDeviceIdProvider implements DeviceIdProvider {
 
 void main() {
   setUpAll(() {
-    registerFallbackValue(<String, String>{});
+    registerFallbackValue(Uri.parse('https://example.com'));
   });
 
-  late _MockDio dio;
+  late _MockClient client;
   late LicenseCache cache;
   late DateTime fakeNow;
 
   setUp(() {
-    dio = _MockDio();
+    client = _MockClient();
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     cache = LicenseCache(SharedPreferencesAsync());
@@ -39,7 +41,7 @@ void main() {
   });
 
   LicenseClient buildClient() => LicenseClient(
-    dio: dio,
+    client: client,
     cache: cache,
     deviceIdProvider: _FakeDeviceIdProvider(),
     now: () => fakeNow,
@@ -66,24 +68,24 @@ void main() {
     test(
       'returns valid status, server flags, and lastFetched = now()',
       () async {
-        when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-            .thenAnswer((invocation) async {
-              final path = invocation.positionalArguments.first as String;
-              if (path.endsWith('/validate')) {
-                return Response(
-                  requestOptions: RequestOptions(path: path),
-                  statusCode: 200,
-                  data: <String, dynamic>{'valid': true},
-                );
-              }
-              return Response(
-                requestOptions: RequestOptions(path: path),
-                statusCode: 200,
-                data: {
-                  'features': {'waddlebot.gazer.camera-stream': true},
-                },
-              );
-            });
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenAnswer((invocation) async {
+          final path = (invocation.positionalArguments.first as Uri).path;
+          if (path.endsWith('/validate')) {
+            return http.Response(jsonEncode({'valid': true}), 200);
+          }
+          return http.Response(
+            jsonEncode({
+              'features': {'waddlebot.gazer.camera-stream': true},
+            }),
+            200,
+          );
+        });
 
         final state = await buildClient().validateAndFetchFlags();
 
@@ -104,12 +106,13 @@ void main() {
           deviceId: 'device-abc',
         ),
       );
-      when(() => dio.post<dynamic>(any(), data: any(named: 'data'))).thenThrow(
-        DioException(
-          requestOptions: RequestOptions(path: '/validate'),
-          type: DioExceptionType.connectionTimeout,
+      when(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
         ),
-      );
+      ).thenThrow(http.ClientException('connection timed out'));
 
       final state = await buildClient().validateAndFetchFlags();
 
@@ -128,13 +131,13 @@ void main() {
             deviceId: 'device-abc',
           ),
         );
-        when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-            .thenThrow(
-              DioException(
-                requestOptions: RequestOptions(path: '/validate'),
-                type: DioExceptionType.connectionTimeout,
-              ),
-            );
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenThrow(http.ClientException('connection timed out'));
 
         final state = await buildClient().validateAndFetchFlags();
 
@@ -153,12 +156,13 @@ void main() {
           deviceId: 'device-abc',
         ),
       );
-      when(() => dio.post<dynamic>(any(), data: any(named: 'data'))).thenThrow(
-        DioException(
-          requestOptions: RequestOptions(path: '/validate'),
-          type: DioExceptionType.connectionTimeout,
+      when(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
         ),
-      );
+      ).thenThrow(http.ClientException('connection timed out'));
 
       final state = await buildClient().validateAndFetchFlags();
 
@@ -166,12 +170,13 @@ void main() {
     });
 
     test('no cache at all -> unknown with empty flags', () async {
-      when(() => dio.post<dynamic>(any(), data: any(named: 'data'))).thenThrow(
-        DioException(
-          requestOptions: RequestOptions(path: '/validate'),
-          type: DioExceptionType.connectionTimeout,
+      when(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
         ),
-      );
+      ).thenThrow(http.ClientException('connection timed out'));
 
       final state = await buildClient().validateAndFetchFlags();
 
@@ -182,18 +187,24 @@ void main() {
 
   group('validateAndFetchFlags device id provider throws', () {
     test('-> unknown, does not throw, and never calls the server', () async {
-      final client = LicenseClient(
-        dio: dio,
+      final licenseClient = LicenseClient(
+        client: client,
         cache: cache,
         deviceIdProvider: _ThrowingDeviceIdProvider(),
         now: () => fakeNow,
       );
 
-      final state = await client.validateAndFetchFlags();
+      final state = await licenseClient.validateAndFetchFlags();
 
       expect(state.status, LicenseStatus.unknown);
       expect(state.flags, isEmpty);
-      verifyNever(() => dio.post<dynamic>(any(), data: any(named: 'data')));
+      verifyNever(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+        ),
+      );
     });
   });
 
@@ -205,13 +216,13 @@ void main() {
           'gazer.license.state',
           'not-valid-json',
         );
-        when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-            .thenThrow(
-              DioException(
-                requestOptions: RequestOptions(path: '/validate'),
-                type: DioExceptionType.connectionTimeout,
-              ),
-            );
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenThrow(http.ClientException('connection timed out'));
 
         final state = await buildClient().validateAndFetchFlags();
 
@@ -223,16 +234,13 @@ void main() {
 
   group('validateAndFetchFlags 4xx response', () {
     test('-> invalid', () async {
-      when(() => dio.post<dynamic>(any(), data: any(named: 'data'))).thenThrow(
-        DioException(
-          requestOptions: RequestOptions(path: '/validate'),
-          type: DioExceptionType.badResponse,
-          response: Response(
-            requestOptions: RequestOptions(path: '/validate'),
-            statusCode: 401,
-          ),
+      when(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
         ),
-      );
+      ).thenAnswer((_) async => http.Response('', 401));
 
       final state = await buildClient().validateAndFetchFlags();
 
@@ -245,16 +253,20 @@ void main() {
       'an explicit valid:false grades invalid and never fetches features',
       () async {
         final calledPaths = <String>[];
-        when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-            .thenAnswer((invocation) async {
-              final path = invocation.positionalArguments.first as String;
-              calledPaths.add(path);
-              return Response(
-                requestOptions: RequestOptions(path: path),
-                statusCode: 200,
-                data: <String, dynamic>{'valid': false, 'reason': 'expired'},
-              );
-            });
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenAnswer((invocation) async {
+          final path = (invocation.positionalArguments.first as Uri).path;
+          calledPaths.add(path);
+          return http.Response(
+            jsonEncode({'valid': false, 'reason': 'expired'}),
+            200,
+          );
+        });
 
         final state = await buildClient().validateAndFetchFlags();
 
@@ -268,15 +280,13 @@ void main() {
     test(
       'an unparseable body is not evidence of entitlement -> invalid',
       () async {
-        when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-            .thenAnswer((invocation) async {
-              final path = invocation.positionalArguments.first as String;
-              return Response(
-                requestOptions: RequestOptions(path: path),
-                statusCode: 200,
-                data: 'not json at all',
-              );
-            });
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenAnswer((_) async => http.Response('not json at all', 200));
 
         final state = await buildClient().validateAndFetchFlags();
 
@@ -295,13 +305,13 @@ void main() {
             deviceId: 'device-abc',
           ),
         );
-        when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-            .thenThrow(
-              DioException(
-                requestOptions: RequestOptions(path: '/validate'),
-                type: DioExceptionType.connectionTimeout,
-              ),
-            );
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenThrow(http.ClientException('connection timed out'));
 
         final state = await buildClient().validateAndFetchFlags();
 
@@ -313,31 +323,35 @@ void main() {
   });
 
   group('validateAndFetchFlags never throws', () {
-    test('an unexpected exception (malformed features shape) is swallowed, not rethrown', () async {
-      when(() => dio.post<dynamic>(any(), data: any(named: 'data')))
-          .thenAnswer((invocation) async {
-            final path = invocation.positionalArguments.first as String;
-            return Response(
-              requestOptions: RequestOptions(path: path),
-              statusCode: 200,
-              // /validate affirms; /features answers with no `features`
-              // key, so the cast below it throws.
-              data: <String, dynamic>{'valid': true},
-            );
-          });
+    test(
+      'an unexpected exception (malformed features shape) is swallowed, not rethrown',
+      () async {
+        when(
+          () => client.post(
+            any(),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+          ),
+        ).thenAnswer((_) async {
+          // /validate affirms; /features answers with no `features`
+          // key, so the cast below it throws.
+          return http.Response(jsonEncode({'valid': true}), 200);
+        });
 
-      expect(buildClient().validateAndFetchFlags(), completes);
-    });
+        expect(buildClient().validateAndFetchFlags(), completes);
+      },
+    );
   });
 
   group('keepalive', () {
     test('is fire-and-forget: completes even when the POST throws', () async {
-      when(() => dio.post<dynamic>(any(), data: any(named: 'data'))).thenThrow(
-        DioException(
-          requestOptions: RequestOptions(path: '/keepalive'),
-          type: DioExceptionType.connectionTimeout,
+      when(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
         ),
-      );
+      ).thenThrow(http.ClientException('connection timed out'));
 
       await expectLater(buildClient().keepalive(), completes);
     });
@@ -345,15 +359,21 @@ void main() {
 
   group('keepalive device id provider throws', () {
     test('completes normally and never calls the server', () async {
-      final client = LicenseClient(
-        dio: dio,
+      final licenseClient = LicenseClient(
+        client: client,
         cache: cache,
         deviceIdProvider: _ThrowingDeviceIdProvider(),
         now: () => fakeNow,
       );
 
-      await expectLater(client.keepalive(), completes);
-      verifyNever(() => dio.post<dynamic>(any(), data: any(named: 'data')));
+      await expectLater(licenseClient.keepalive(), completes);
+      verifyNever(
+        () => client.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+        ),
+      );
     });
   });
 }

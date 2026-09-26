@@ -103,25 +103,28 @@ void main() {
     expect(periodic.cancelCount, 1);
   });
 
-  test('onLifecycle starts on resumed and stops on paused/inactive/detached/hidden', () {
-    final scheduler = buildScheduler();
+  test(
+    'onLifecycle starts on resumed and stops on paused/inactive/detached/hidden',
+    () {
+      final scheduler = buildScheduler();
 
-    for (final state in <AppLifecycleState>[
-      AppLifecycleState.paused,
-      AppLifecycleState.inactive,
-      AppLifecycleState.detached,
-      AppLifecycleState.hidden,
-    ]) {
-      scheduler.onLifecycle(AppLifecycleState.resumed);
-      expect(scheduler.isRunning, isTrue);
-      scheduler.onLifecycle(state);
-      expect(
-        scheduler.isRunning,
-        isFalse,
-        reason: '$state must stop the scheduler',
-      );
-    }
-  });
+      for (final state in <AppLifecycleState>[
+        AppLifecycleState.paused,
+        AppLifecycleState.inactive,
+        AppLifecycleState.detached,
+        AppLifecycleState.hidden,
+      ]) {
+        scheduler.onLifecycle(AppLifecycleState.resumed);
+        expect(scheduler.isRunning, isTrue);
+        scheduler.onLifecycle(state);
+        expect(
+          scheduler.isRunning,
+          isFalse,
+          reason: '$state must stop the scheduler',
+        );
+      }
+    },
+  );
 
   test(
     'ping failures are swallowed and counted; the scheduler keeps running',

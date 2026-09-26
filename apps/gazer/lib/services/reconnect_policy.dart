@@ -41,8 +41,8 @@ class ReconnectPolicy {
     this.base = const Duration(seconds: 1),
     this.cap = const Duration(seconds: 30),
     this.jitter = 0.2,
-    Random? random,
-  }) : _random = random; // ignore: prefer_initializing_formals
+    this._random,
+  });
 
   /// Determines whether a given error code should trigger automatic reconnection.
   ///

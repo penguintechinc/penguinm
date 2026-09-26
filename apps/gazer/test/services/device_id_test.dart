@@ -17,8 +17,9 @@ void main() {
       final deviceInfoPlugin = _MockDeviceInfoPlugin();
       final androidInfo = _MockAndroidDeviceInfo();
       when(() => androidInfo.id).thenReturn('abc123');
-      when(() => deviceInfoPlugin.androidInfo)
-          .thenAnswer((_) async => androidInfo);
+      when(
+        () => deviceInfoPlugin.androidInfo,
+      ).thenAnswer((_) async => androidInfo);
 
       final packageInfo = PackageInfo(
         appName: 'Gazer',
@@ -43,8 +44,9 @@ void main() {
       final deviceInfoPlugin = _MockDeviceInfoPlugin();
       final androidInfo = _MockAndroidDeviceInfo();
       when(() => androidInfo.id).thenReturn('xyz789');
-      when(() => deviceInfoPlugin.androidInfo)
-          .thenAnswer((_) async => androidInfo);
+      when(
+        () => deviceInfoPlugin.androidInfo,
+      ).thenAnswer((_) async => androidInfo);
       final packageInfo = PackageInfo(
         appName: 'Gazer',
         packageName: 'io.waddlebot.gazer',

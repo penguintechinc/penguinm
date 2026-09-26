@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gazer/telemetry/gazer_telemetry.dart';
 import 'package:gazer/telemetry/telemetry_config.dart';
@@ -40,7 +40,7 @@ void main() {
   tearDown(GazerTelemetry.resetForTest);
 
   test('health is disabled while no endpoint is configured', () {
-    GazerTelemetry.init(_configFor(''), dio: Dio());
+    GazerTelemetry.init(_configFor(''), client: http.Client());
 
     expect(GazerTelemetry.health.value.status, TelemetryHealthStatus.disabled);
   });
@@ -64,7 +64,7 @@ void main() {
 
     GazerTelemetry.init(
       _configFor('http://127.0.0.1:${server.port}'),
-      dio: Dio(),
+      client: http.Client(),
     );
     GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
     await GazerTelemetry.flush();
@@ -72,42 +72,45 @@ void main() {
     expect(GazerTelemetry.health.value.status, TelemetryHealthStatus.ok);
   });
 
-  test('a collector that succeeds once and then dies reads as degraded, not exporting', () async {
-    // The case the old status-panel arithmetic got wrong: it asked
-    // `exportFailures > 0 && exportSuccesses == 0`, so one historical
-    // success masked every later failure forever.
-    final HttpServer server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final StreamSubscription<HttpRequest> subscription = server.listen((
-      HttpRequest request,
-    ) async {
-      await utf8.decoder.bind(request).join();
-      request.response.statusCode = 200;
-      await request.response.close();
-    });
+  test(
+    'a collector that succeeds once and then dies reads as degraded, not exporting',
+    () async {
+      // The case the old status-panel arithmetic got wrong: it asked
+      // `exportFailures > 0 && exportSuccesses == 0`, so one historical
+      // success masked every later failure forever.
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final StreamSubscription<HttpRequest> subscription = server.listen((
+        HttpRequest request,
+      ) async {
+        await utf8.decoder.bind(request).join();
+        request.response.statusCode = 200;
+        await request.response.close();
+      });
 
-    GazerTelemetry.init(
-      _configFor('http://127.0.0.1:${server.port}'),
-      dio: Dio(),
-    );
-    GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
-    await GazerTelemetry.flush();
-    expect(GazerTelemetry.health.value.status, TelemetryHealthStatus.ok);
-    expect(GazerTelemetry.exportSuccesses, greaterThanOrEqualTo(1));
+      GazerTelemetry.init(
+        _configFor('http://127.0.0.1:${server.port}'),
+        client: http.Client(),
+      );
+      GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
+      await GazerTelemetry.flush();
+      expect(GazerTelemetry.health.value.status, TelemetryHealthStatus.ok);
+      expect(GazerTelemetry.exportSuccesses, greaterThanOrEqualTo(1));
 
-    // The collector goes away for good.
-    await server.close(force: true);
-    await subscription.cancel();
-    GazerTelemetry.recordLog('info', 'test.log.2', const <String, Object?>{});
-    await GazerTelemetry.flush();
+      // The collector goes away for good.
+      await server.close(force: true);
+      await subscription.cancel();
+      GazerTelemetry.recordLog('info', 'test.log.2', const <String, Object?>{});
+      await GazerTelemetry.flush();
 
-    final TelemetryHealth health = GazerTelemetry.health.value;
-    expect(health.status, TelemetryHealthStatus.degraded);
-    expect(health.transportFailures, greaterThanOrEqualTo(1));
-    expect(health.lastError, 'transport:logs');
-  });
+      final TelemetryHealth health = GazerTelemetry.health.value;
+      expect(health.status, TelemetryHealthStatus.degraded);
+      expect(health.transportFailures, greaterThanOrEqualTo(1));
+      expect(health.lastError, 'transport:logs');
+    },
+  );
 
   test(
     'a dropped-on-encode batch degrades health even while transport is fine',
@@ -133,7 +136,7 @@ void main() {
 
       GazerTelemetry.init(
         _configFor('http://127.0.0.1:${server.port}'),
-        dio: Dio(),
+        client: http.Client(),
       );
       GazerTelemetry.recordLog('info', 'test.log', <String, Object?>{
         'bad': _ThrowingToString(),
@@ -154,7 +157,7 @@ void main() {
 
     GazerTelemetry.init(
       _configFor('http://127.0.0.1:${await _deadPort()}'),
-      dio: Dio(),
+      client: http.Client(),
     );
     GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
     await GazerTelemetry.flush();
@@ -163,57 +166,60 @@ void main() {
     expect(seen.last, TelemetryHealthStatus.degraded);
   });
 
-  test('an overlapping flush is skipped instead of double-exporting the same batch', () async {
-    int logRequests = 0;
-    final Completer<void> holdFirst = Completer<void>();
+  test(
+    'an overlapping flush is skipped instead of double-exporting the same batch',
+    () async {
+      int logRequests = 0;
+      final Completer<void> holdFirst = Completer<void>();
 
-    final HttpServer server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    final StreamSubscription<HttpRequest> subscription = server.listen((
-      HttpRequest request,
-    ) async {
-      await utf8.decoder.bind(request).join();
-      if (request.uri.path == '/v1/logs') {
-        logRequests += 1;
-        // Hold only the first POST open, simulating the black-holed
-        // collector the spec calls out. Holding every POST would deadlock
-        // the unguarded code rather than let it fail with a count.
-        if (logRequests == 1) await holdFirst.future;
-      }
-      request.response.statusCode = 200;
-      await request.response.close();
-    });
-    addTearDown(() async {
-      await server.close(force: true);
-      await subscription.cancel();
-    });
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final StreamSubscription<HttpRequest> subscription = server.listen((
+        HttpRequest request,
+      ) async {
+        await utf8.decoder.bind(request).join();
+        if (request.uri.path == '/v1/logs') {
+          logRequests += 1;
+          // Hold only the first POST open, simulating the black-holed
+          // collector the spec calls out. Holding every POST would deadlock
+          // the unguarded code rather than let it fail with a count.
+          if (logRequests == 1) await holdFirst.future;
+        }
+        request.response.statusCode = 200;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await server.close(force: true);
+        await subscription.cancel();
+      });
 
-    GazerTelemetry.init(
-      _configFor('http://127.0.0.1:${server.port}'),
-      dio: Dio(),
-    );
-    GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{
-      'k': 'v',
-    });
+      GazerTelemetry.init(
+        _configFor('http://127.0.0.1:${server.port}'),
+        client: http.Client(),
+      );
+      GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{
+        'k': 'v',
+      });
 
-    final Future<void> first = GazerTelemetry.flush();
-    // Let the first POST actually reach the server before the second
-    // tick fires, so the overlap is real rather than a race.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    final Future<void> second = GazerTelemetry.flush();
-    await second;
-    holdFirst.complete();
+      final Future<void> first = GazerTelemetry.flush();
+      // Let the first POST actually reach the server before the second
+      // tick fires, so the overlap is real rather than a race.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final Future<void> second = GazerTelemetry.flush();
+      await second;
+      holdFirst.complete();
 
-    // Unguarded, the second flush snapshots the same record, POSTs it
-    // again, and then both flushes remove by index -- the second removal
-    // throwing RangeError inside a Timer.periodic callback.
-    await expectLater(first, completes);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+      // Unguarded, the second flush snapshots the same record, POSTs it
+      // again, and then both flushes remove by index -- the second removal
+      // throwing RangeError inside a Timer.periodic callback.
+      await expectLater(first, completes);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    expect(logRequests, 1, reason: 'the overlapping flush must not re-send');
-  });
+      expect(logRequests, 1, reason: 'the overlapping flush must not re-send');
+    },
+  );
 
   test(
     'a record appended during an in-flight flush survives the batch removal',
@@ -261,7 +267,7 @@ void main() {
 
       GazerTelemetry.init(
         _configFor('http://127.0.0.1:${server.port}'),
-        dio: Dio(),
+        client: http.Client(),
       );
       GazerTelemetry.recordLog('info', 'first', const <String, Object?>{});
 

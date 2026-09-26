@@ -1,12 +1,7 @@
-// ignore_for_file: prefer_initializing_formals
-// Public constructor parameter names (`dio`, `cache`, `deviceIdProvider`,
-// `now`) are fixed by the design contract and differ from the private field
-// names by more than the leading underscore, so an explicit assignment list
-// is required instead of `this._dio` etc.
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
@@ -16,7 +11,7 @@ import 'gazer_log.dart';
 
 /// Persists the most recent [LicenseState] as JSON in shared_preferences.
 class LicenseCache {
-  LicenseCache(SharedPreferencesAsync prefs) : _prefs = prefs;
+  LicenseCache(this._prefs);
 
   final SharedPreferencesAsync _prefs;
 
@@ -43,23 +38,24 @@ class LicenseCache {
 /// [LicenseState] instead of propagating an exception to the caller.
 class LicenseClient {
   LicenseClient({
-    required Dio dio,
-    required LicenseCache cache,
-    required DeviceIdProvider deviceIdProvider,
-    required DateTime Function() now,
+    required this._client,
+    required this._cache,
+    required this._deviceIdProvider,
+    required this._now,
     this.baseUrl = kLicenseBaseUrl,
-  }) : _dio = dio,
-       _cache = cache,
-       _deviceIdProvider = deviceIdProvider,
-       _now = now;
+  });
 
-  final Dio _dio;
+  final http.Client _client;
   final LicenseCache _cache;
   final DeviceIdProvider _deviceIdProvider;
   final DateTime Function() _now;
 
   /// Base URL for `/validate`, `/features`, `/keepalive`.
   final String baseUrl;
+
+  static const Map<String, String> _jsonHeaders = <String, String>{
+    'content-type': 'application/json',
+  };
 
   /// Validates this install and fetches its feature flags.
   ///
@@ -102,19 +98,37 @@ class LicenseClient {
     }
 
     try {
-      final validateResponse = await _dio.post<dynamic>(
-        '$baseUrl/validate',
-        data: _payload(deviceId),
-      );
-      if (!_isValidated(validateResponse.data)) {
+      final validateResponse = await _client
+          .post(
+            Uri.parse('$baseUrl/validate'),
+            headers: _jsonHeaders,
+            body: jsonEncode(_payload(deviceId)),
+          )
+          .timeout(kHttpTimeout);
+      final statusCode = validateResponse.statusCode;
+      if (statusCode >= 400 && statusCode < 500) {
         return await _invalid(cached, deviceId);
       }
-      final response = await _dio.post<dynamic>(
-        '$baseUrl/features',
-        data: _payload(deviceId),
-      );
+      if (statusCode < 200 || statusCode >= 300) {
+        // A non-2xx, non-4xx response (e.g. 5xx) is a transport-level
+        // failure, not an answer -- never reaches body validation.
+        return _offlineFallback(cached, deviceId);
+      }
+      if (!_isValidated(_decodeBody(validateResponse.body))) {
+        return await _invalid(cached, deviceId);
+      }
+      final response = await _client
+          .post(
+            Uri.parse('$baseUrl/features'),
+            headers: _jsonHeaders,
+            body: jsonEncode(_payload(deviceId)),
+          )
+          .timeout(kHttpTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return _offlineFallback(cached, deviceId);
+      }
       final rawFlags = Map<String, dynamic>.from(
-        (response.data as Map<String, dynamic>)['features'] as Map,
+        (_decodeBody(response.body) as Map<String, dynamic>)['features'] as Map,
       );
       final flags = rawFlags.map((key, value) => MapEntry(key, value as bool));
       final state = LicenseState(
@@ -126,14 +140,19 @@ class LicenseClient {
       await _cache.write(state);
       _logFetchOutcome(state, deviceId);
       return state;
-    } on DioException catch (e) {
-      final statusCode = e.response?.statusCode;
-      if (statusCode != null && statusCode >= 400 && statusCode < 500) {
-        return await _invalid(cached, deviceId);
-      }
-      return _offlineFallback(cached, deviceId);
     } catch (_) {
       return _offlineFallback(cached, deviceId);
+    }
+  }
+
+  /// Decodes a raw response body as JSON, returning `null` on any decode
+  /// failure rather than throwing -- an unparseable body is not evidence
+  /// of entitlement, but it must not crash the never-throw contract either.
+  static Object? _decodeBody(String body) {
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -142,8 +161,7 @@ class LicenseClient {
   /// Only an explicit boolean `valid: true` counts. A body that is not a
   /// JSON object, or whose `valid` field is missing or not a bool, is
   /// treated as *not* validated: an unreadable answer is not evidence of
-  /// entitlement, and the previous code discarded this body entirely, so
-  /// a server replying `200 {"valid": false}` was graded fully valid.
+  /// entitlement.
   static bool _isValidated(Object? body) {
     if (body is! Map) return false;
     final Object? valid = body['valid'];
@@ -189,13 +207,17 @@ class LicenseClient {
     }
   }
 
-  /// Wrapped in its own `async` body so that a synchronous throw from
-  /// `_dio.post` (as well as an asynchronous one) is caught the same way —
-  /// `catchError` on the bare call only guards a rejected [Future], not a
-  /// call that throws before returning one.
+  /// Wrapped in its own `async` body so that a synchronous throw is caught
+  /// the same way as an asynchronous one.
   Future<void> _sendKeepalive(String deviceId) async {
     try {
-      await _dio.post<dynamic>('$baseUrl/keepalive', data: _payload(deviceId));
+      await _client
+          .post(
+            Uri.parse('$baseUrl/keepalive'),
+            headers: _jsonHeaders,
+            body: jsonEncode(_payload(deviceId)),
+          )
+          .timeout(kHttpTimeout);
     } catch (_) {
       // Fire-and-forget: keepalive failures are never surfaced to the caller.
     }

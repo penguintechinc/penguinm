@@ -20,6 +20,7 @@ workspace:
   - tooling/otlp_sink
   - apps/penguin_reference
   - apps/penguincloud
+  - apps/gazer
 dev_dependencies:
   melos: 8.7.0
 # melos 8.7.0 reads scripts/command/repository from this `melos:` key (not a

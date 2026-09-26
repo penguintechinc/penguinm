@@ -1,6 +1,4 @@
-import 'package:riverpod_annotation/riverpod_annotation.dart';
-
-part 'selected_device_provider.g.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// The video device id the user is currently streaming from, lifted out of
 /// `HomeScreen`'s widget state so both the source picker and `StatusPanel`
@@ -8,10 +6,9 @@ part 'selected_device_provider.g.dart';
 /// reported `devices.first`, which is wrong whenever the front camera is
 /// picked).
 ///
-/// `keepAlive: true`: the selection must survive navigating to Settings and
+/// Not autoDispose: the selection must survive navigating to Settings and
 /// back, where nothing in the tree watches this provider.
-@Riverpod(keepAlive: true)
-class SelectedDevice extends _$SelectedDevice {
+class SelectedDevice extends Notifier<String?> {
   @override
   String? build() => null;
 
@@ -34,3 +31,8 @@ class SelectedDevice extends _$SelectedDevice {
     }
   }
 }
+
+/// Riverpod entry point for [SelectedDevice].
+final selectedDeviceProvider = NotifierProvider<SelectedDevice, String?>(
+  SelectedDevice.new,
+);

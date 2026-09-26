@@ -1,8 +1,3 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
-
-part 'quality.freezed.dart';
-part 'quality.g.dart';
-
 /// Short-edge output resolution for the encoded video stream, paired with
 /// its pixel width/height at 16:9 and a compact UI label (e.g. "540p").
 enum Resolution {
@@ -51,19 +46,27 @@ const int kAudioBitrateKbps = 128;
 
 /// User-configurable video quality: resolution, frame rate, target bitrate
 /// and whether the encoder is allowed to adapt bitrate down on congestion.
-@freezed
-abstract class QualitySettings with _$QualitySettings {
-  const factory QualitySettings({
-    required Resolution resolution,
-    required FrameRate frameRate,
-    required int videoBitrateKbps,
-    required bool adaptiveBitrate,
-  }) = _QualitySettings;
+///
+/// Hand-written immutable value class (no code generation): const
+/// constructor, value equality, `copyWith`, and manual JSON codec.
+class QualitySettings {
+  /// Creates an immutable quality settings snapshot.
+  const QualitySettings({
+    required this.resolution,
+    required this.frameRate,
+    required this.videoBitrateKbps,
+    required this.adaptiveBitrate,
+  });
 
   /// Deserializes a [QualitySettings] from JSON (round-trip tests only;
-  /// [SecureSettingsRepository] persists these as separate scalar keys).
+  /// `SecureSettingsRepository` persists these as separate scalar keys).
   factory QualitySettings.fromJson(Map<String, dynamic> json) =>
-      _$QualitySettingsFromJson(json);
+      QualitySettings(
+        resolution: Resolution.values.byName(json['resolution'] as String),
+        frameRate: FrameRate.values.byName(json['frameRate'] as String),
+        videoBitrateKbps: (json['videoBitrateKbps'] as num).toInt(),
+        adaptiveBitrate: json['adaptiveBitrate'] as bool,
+      );
 
   /// House default: 540p @ 30fps, 2000 kbps, adaptive bitrate on.
   factory QualitySettings.defaults() => const QualitySettings(
@@ -72,4 +75,55 @@ abstract class QualitySettings with _$QualitySettings {
     videoBitrateKbps: 2000,
     adaptiveBitrate: true,
   );
+
+  /// Output resolution tier.
+  final Resolution resolution;
+
+  /// Target encoder frame rate.
+  final FrameRate frameRate;
+
+  /// Target video bitrate, in kbps.
+  final int videoBitrateKbps;
+
+  /// Whether the encoder is allowed to adapt bitrate down on congestion.
+  final bool adaptiveBitrate;
+
+  /// Serializes this instance to JSON (round-trip tests only).
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'resolution': resolution.name,
+    'frameRate': frameRate.name,
+    'videoBitrateKbps': videoBitrateKbps,
+    'adaptiveBitrate': adaptiveBitrate,
+  };
+
+  /// Returns a copy with the given fields replaced.
+  QualitySettings copyWith({
+    Resolution? resolution,
+    FrameRate? frameRate,
+    int? videoBitrateKbps,
+    bool? adaptiveBitrate,
+  }) => QualitySettings(
+    resolution: resolution ?? this.resolution,
+    frameRate: frameRate ?? this.frameRate,
+    videoBitrateKbps: videoBitrateKbps ?? this.videoBitrateKbps,
+    adaptiveBitrate: adaptiveBitrate ?? this.adaptiveBitrate,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is QualitySettings &&
+          other.resolution == resolution &&
+          other.frameRate == frameRate &&
+          other.videoBitrateKbps == videoBitrateKbps &&
+          other.adaptiveBitrate == adaptiveBitrate);
+
+  @override
+  int get hashCode =>
+      Object.hash(resolution, frameRate, videoBitrateKbps, adaptiveBitrate);
+
+  @override
+  String toString() =>
+      'QualitySettings(resolution: $resolution, frameRate: $frameRate, '
+      'videoBitrateKbps: $videoBitrateKbps, adaptiveBitrate: $adaptiveBitrate)';
 }

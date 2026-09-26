@@ -181,40 +181,43 @@ void main() {
   });
 
   group('reconnect on rtmpConnectFailed', () {
-    test('emits ReconnectingState(1, delay) then retries start after the sleeper resolves', () async {
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
-      final startCallsBefore = host.startCalls.length;
-      final prepareCallsBefore = host.prepareCalls.length;
+    test(
+      'emits ReconnectingState(1, delay) then retries start after the sleeper resolves',
+      () async {
+        await controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
+        final startCallsBefore = host.startCalls.length;
+        final prepareCallsBefore = host.prepareCalls.length;
 
-      bridge.onStateChanged(
-        StateEvent(
-          state: NativePipelineState.error,
-          error: GazerErrorCode.rtmpConnectFailed,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
+        bridge.onStateChanged(
+          StateEvent(
+            state: NativePipelineState.error,
+            error: GazerErrorCode.rtmpConnectFailed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
 
-      expect(controller.current, isA<ReconnectingState>());
-      expect((controller.current as ReconnectingState).attempt, 1);
-      expect(sleeper.pendingCount, 1);
-      expect(host.startCalls.length, startCallsBefore);
+        expect(controller.current, isA<ReconnectingState>());
+        expect((controller.current as ReconnectingState).attempt, 1);
+        expect(sleeper.pendingCount, 1);
+        expect(host.startCalls.length, startCallsBefore);
 
-      sleeper.resolveNext();
-      await Future<void>.delayed(Duration.zero);
+        sleeper.resolveNext();
+        await Future<void>.delayed(Duration.zero);
 
-      expect(host.startCalls.length, startCallsBefore + 1);
-      // The retry must re-prepare first: GazerPipeline.onConnectionFailed
-      // releases the native engine, so a bare start() is rejected from a
-      // non-READY state with GazerErrorCode.unknown -- which ReconnectPolicy
-      // treats as non-retryable, ending the reconnect loop on its first
-      // attempt.
-      expect(host.prepareCalls.length, prepareCallsBefore + 1);
-    });
+        expect(host.startCalls.length, startCallsBefore + 1);
+        // The retry must re-prepare first: GazerPipeline.onConnectionFailed
+        // releases the native engine, so a bare start() is rejected from a
+        // non-READY state with GazerErrorCode.unknown -- which ReconnectPolicy
+        // treats as non-retryable, ending the reconnect loop on its first
+        // attempt.
+        expect(host.prepareCalls.length, prepareCallsBefore + 1);
+      },
+    );
 
     test('holds ReconnectingState across the retry re-prepare, suppressing '
         'native Preparing/Ready', () async {
@@ -460,170 +463,184 @@ void main() {
   });
 
   group('stats aggregation', () {
-    test('averages bitrate, tracks reconnectCount, and reports uptime while streaming', () async {
-      final seen = <StreamStats>[];
-      final sub = controller.stats.listen(seen.add);
+    test(
+      'averages bitrate, tracks reconnectCount, and reports uptime while streaming',
+      () async {
+        final seen = <StreamStats>[];
+        final sub = controller.stats.listen(seen.add);
 
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
-      bridge.onStateChanged(StateEvent(state: NativePipelineState.streaming));
-      await Future<void>.delayed(Duration.zero);
-
-      bridge.onStats(
-        StatsSample(
-          bitrateKbps: 2000,
-          fps: 30,
-          droppedVideoFrames: 0,
-          sentBytes: 1000,
-          congestionPercent: 0,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-      bridge.onStats(
-        StatsSample(
-          bitrateKbps: 1000,
-          fps: 29,
-          droppedVideoFrames: 1,
-          sentBytes: 2000,
-          congestionPercent: 10,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-
-      final latest = seen.last;
-      expect(latest.currentBitrateKbps, 1000);
-      expect(latest.averageBitrateKbps, 1500);
-      expect(latest.droppedFrames, 1);
-      expect(latest.sentBytes, 2000);
-      expect(latest.uptime, greaterThanOrEqualTo(Duration.zero));
-
-      bridge.onStateChanged(
-        StateEvent(
-          state: NativePipelineState.error,
-          error: GazerErrorCode.rtmpConnectFailed,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-
-      expect(seen.last.reconnectCount, 1);
-      await sub.cancel();
-    });
-  });
-
-  group('dispose during reconnect', () {
-    test('resolving the sleeper after dispose does not throw and does not call start again', () async {
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
-      final startCallsBefore = host.startCalls.length;
-
-      bridge.onStateChanged(
-        StateEvent(
-          state: NativePipelineState.error,
-          error: GazerErrorCode.rtmpConnectFailed,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(controller.current, isA<ReconnectingState>());
-
-      controller.dispose();
-
-      expect(() => sleeper.resolveNext(), returnsNormally);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(host.startCalls.length, startCallsBefore);
-    });
-  });
-
-  group('reconnect attempt resets after recovery', () {
-    test('two recovered outages each retry at attempt 1; a later outage still gets 10 attempts', () async {
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
-
-      Future<void> failAndRecoverOnce() async {
-        bridge.onStateChanged(
-          StateEvent(
-            state: NativePipelineState.error,
-            error: GazerErrorCode.rtmpConnectFailed,
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        expect((controller.current as ReconnectingState).attempt, 1);
-        sleeper.resolveNext();
-        await Future<void>.delayed(Duration.zero);
-        bridge.onStateChanged(StateEvent(state: NativePipelineState.streaming));
-        await Future<void>.delayed(Duration.zero);
-        expect(controller.current, const StreamingState());
-      }
-
-      // First outage: recovers after one retry at attempt 1.
-      await failAndRecoverOnce();
-      // Second outage: budget must have reset -- still attempt 1, not 2.
-      await failAndRecoverOnce();
-
-      // Third outage: exhausts the full 10-attempt budget from scratch.
-      for (var attempt = 1; attempt <= 10; attempt++) {
-        bridge.onStateChanged(
-          StateEvent(
-            state: NativePipelineState.error,
-            error: GazerErrorCode.rtmpConnectFailed,
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          (controller.current as ReconnectingState).attempt,
-          attempt,
-          reason: 'attempt $attempt',
-        );
-        sleeper.resolveNext();
-        await Future<void>.delayed(Duration.zero);
-      }
-
-      bridge.onStateChanged(
-        StateEvent(
-          state: NativePipelineState.error,
-          error: GazerErrorCode.rtmpConnectFailed,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-
-      expect(controller.current, isA<ErrorState>());
-    });
-  });
-
-  group('goLive re-entrancy guard', () {
-    test('an overlapping call throws StateError and only one prepare reaches the host', () async {
-      final first = controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
-
-      expect(
-        () => controller.goLive(
+        await controller.goLive(
           settingsWith(),
           devices: [backCamera],
           videoDeviceId: 'camera:back',
           flags: flagsWith(),
-        ),
-        throwsStateError,
-      );
+        );
+        bridge.onStateChanged(StateEvent(state: NativePipelineState.streaming));
+        await Future<void>.delayed(Duration.zero);
 
-      await first;
-      expect(host.prepareCalls.length, 1);
-    });
+        bridge.onStats(
+          StatsSample(
+            bitrateKbps: 2000,
+            fps: 30,
+            droppedVideoFrames: 0,
+            sentBytes: 1000,
+            congestionPercent: 0,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        bridge.onStats(
+          StatsSample(
+            bitrateKbps: 1000,
+            fps: 29,
+            droppedVideoFrames: 1,
+            sentBytes: 2000,
+            congestionPercent: 10,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final latest = seen.last;
+        expect(latest.currentBitrateKbps, 1000);
+        expect(latest.averageBitrateKbps, 1500);
+        expect(latest.droppedFrames, 1);
+        expect(latest.sentBytes, 2000);
+        expect(latest.uptime, greaterThanOrEqualTo(Duration.zero));
+
+        bridge.onStateChanged(
+          StateEvent(
+            state: NativePipelineState.error,
+            error: GazerErrorCode.rtmpConnectFailed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(seen.last.reconnectCount, 1);
+        await sub.cancel();
+      },
+    );
+  });
+
+  group('dispose during reconnect', () {
+    test(
+      'resolving the sleeper after dispose does not throw and does not call start again',
+      () async {
+        await controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
+        final startCallsBefore = host.startCalls.length;
+
+        bridge.onStateChanged(
+          StateEvent(
+            state: NativePipelineState.error,
+            error: GazerErrorCode.rtmpConnectFailed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.current, isA<ReconnectingState>());
+
+        controller.dispose();
+
+        expect(() => sleeper.resolveNext(), returnsNormally);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(host.startCalls.length, startCallsBefore);
+      },
+    );
+  });
+
+  group('reconnect attempt resets after recovery', () {
+    test(
+      'two recovered outages each retry at attempt 1; a later outage still gets 10 attempts',
+      () async {
+        await controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
+
+        Future<void> failAndRecoverOnce() async {
+          bridge.onStateChanged(
+            StateEvent(
+              state: NativePipelineState.error,
+              error: GazerErrorCode.rtmpConnectFailed,
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          expect((controller.current as ReconnectingState).attempt, 1);
+          sleeper.resolveNext();
+          await Future<void>.delayed(Duration.zero);
+          bridge.onStateChanged(
+            StateEvent(state: NativePipelineState.streaming),
+          );
+          await Future<void>.delayed(Duration.zero);
+          expect(controller.current, const StreamingState());
+        }
+
+        // First outage: recovers after one retry at attempt 1.
+        await failAndRecoverOnce();
+        // Second outage: budget must have reset -- still attempt 1, not 2.
+        await failAndRecoverOnce();
+
+        // Third outage: exhausts the full 10-attempt budget from scratch.
+        for (var attempt = 1; attempt <= 10; attempt++) {
+          bridge.onStateChanged(
+            StateEvent(
+              state: NativePipelineState.error,
+              error: GazerErrorCode.rtmpConnectFailed,
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          expect(
+            (controller.current as ReconnectingState).attempt,
+            attempt,
+            reason: 'attempt $attempt',
+          );
+          sleeper.resolveNext();
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        bridge.onStateChanged(
+          StateEvent(
+            state: NativePipelineState.error,
+            error: GazerErrorCode.rtmpConnectFailed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(controller.current, isA<ErrorState>());
+      },
+    );
+  });
+
+  group('goLive re-entrancy guard', () {
+    test(
+      'an overlapping call throws StateError and only one prepare reaches the host',
+      () async {
+        final first = controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
+
+        expect(
+          () => controller.goLive(
+            settingsWith(),
+            devices: [backCamera],
+            videoDeviceId: 'camera:back',
+            flags: flagsWith(),
+          ),
+          throwsStateError,
+        );
+
+        await first;
+        expect(host.prepareCalls.length, 1);
+      },
+    );
 
     test('calling goLive while Streaming throws StateError', () async {
       await controller.goLive(
@@ -648,28 +665,31 @@ void main() {
   });
 
   group('prepare failure', () {
-    test('PrepareResult(ok: false) emits ErrorState with the reported code/detail and never calls start', () async {
-      host.prepareResult = PrepareResult(
-        ok: false,
-        error: GazerErrorCode.cameraUnavailable,
-        detail: 'x',
-      );
+    test(
+      'PrepareResult(ok: false) emits ErrorState with the reported code/detail and never calls start',
+      () async {
+        host.prepareResult = PrepareResult(
+          ok: false,
+          error: GazerErrorCode.cameraUnavailable,
+          detail: 'x',
+        );
 
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
+        await controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
 
-      expect(controller.current, isA<ErrorState>());
-      expect(
-        (controller.current as ErrorState).error.code,
-        GazerErrorCode.cameraUnavailable,
-      );
-      expect((controller.current as ErrorState).error.detail, 'x');
-      expect(host.startCalls, isEmpty);
-    });
+        expect(controller.current, isA<ErrorState>());
+        expect(
+          (controller.current as ErrorState).error.code,
+          GazerErrorCode.cameraUnavailable,
+        );
+        expect((controller.current as ErrorState).error.detail, 'x');
+        expect(host.startCalls, isEmpty);
+      },
+    );
   });
 
   group('stats aggregation at scale', () {
@@ -711,30 +731,33 @@ void main() {
   });
 
   group('host call throws (never-throw contract)', () {
-    test('a throwing prepare ends in ErrorState(serviceStartDenied), never an unhandled error', () async {
-      host.prepareError = PlatformException(code: 'SERVICE_START_DENIED');
+    test(
+      'a throwing prepare ends in ErrorState(serviceStartDenied), never an unhandled error',
+      () async {
+        host.prepareError = PlatformException(code: 'SERVICE_START_DENIED');
 
-      // The call itself must complete normally: on the unguarded code
-      // the PlatformException escapes as an unhandled async error and
-      // the controller is stranded in PreparingState, where the UI
-      // renders neither Go Live nor Stop.
-      await expectLater(
-        controller.goLive(
-          settingsWith(),
-          devices: [backCamera],
-          videoDeviceId: 'camera:back',
-          flags: flagsWith(),
-        ),
-        completes,
-      );
+        // The call itself must complete normally: on the unguarded code
+        // the PlatformException escapes as an unhandled async error and
+        // the controller is stranded in PreparingState, where the UI
+        // renders neither Go Live nor Stop.
+        await expectLater(
+          controller.goLive(
+            settingsWith(),
+            devices: [backCamera],
+            videoDeviceId: 'camera:back',
+            flags: flagsWith(),
+          ),
+          completes,
+        );
 
-      expect(controller.current, isA<ErrorState>());
-      expect(
-        (controller.current as ErrorState).error.code,
-        GazerErrorCode.serviceStartDenied,
-      );
-      expect(host.startCalls, isEmpty);
-    });
+        expect(controller.current, isA<ErrorState>());
+        expect(
+          (controller.current as ErrorState).error.code,
+          GazerErrorCode.serviceStartDenied,
+        );
+        expect(host.startCalls, isEmpty);
+      },
+    );
 
     test('a throwing start ends in ErrorState(unknown)', () async {
       host.startError = PlatformException(code: 'CHANNEL_ERROR');
@@ -796,26 +819,30 @@ void main() {
       },
     );
 
-    test('the mapped detail carries the platform code, never the exception message', () async {
-      // A Kotlin-side message can quote the target URL, and with it the
-      // stream key -- the mapped detail must never echo it.
-      host.prepareError = PlatformException(
-        code: 'SERVICE_START_DENIED',
-        message: 'startForegroundService refused for rtmp://ingest-a.example.com/live/demo-key-0001',
-      );
+    test(
+      'the mapped detail carries the platform code, never the exception message',
+      () async {
+        // A Kotlin-side message can quote the target URL, and with it the
+        // stream key -- the mapped detail must never echo it.
+        host.prepareError = PlatformException(
+          code: 'SERVICE_START_DENIED',
+          message:
+              'startForegroundService refused for rtmp://ingest-a.example.com/live/demo-key-0001',
+        );
 
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
+        await controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
 
-      final String detail = (controller.current as ErrorState).error.detail!;
-      expect(detail, contains('SERVICE_START_DENIED'));
-      expect(detail, isNot(contains('demo-key-0001')));
-      expect(detail, isNot(contains('ingest-a.example.com')));
-    });
+        final String detail = (controller.current as ErrorState).error.detail!;
+        expect(detail, contains('SERVICE_START_DENIED'));
+        expect(detail, isNot(contains('demo-key-0001')));
+        expect(detail, isNot(contains('ingest-a.example.com')));
+      },
+    );
   });
 
   group('reconnect retry never strands the pipeline', () {
@@ -839,80 +866,89 @@ void main() {
       expect(sleeper.pendingCount, 1);
     }
 
-    test('a throwing re-prepare ends in ErrorState and stops suppressing native events', () async {
-      await reachReconnecting();
-      host.prepareError = PlatformException(code: 'SERVICE_START_DENIED');
+    test(
+      'a throwing re-prepare ends in ErrorState and stops suppressing native events',
+      () async {
+        await reachReconnecting();
+        host.prepareError = PlatformException(code: 'SERVICE_START_DENIED');
 
-      sleeper.resolveNext();
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+        sleeper.resolveNext();
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(controller.current, isA<ErrorState>());
-      expect(
-        (controller.current as ErrorState).error.code,
-        GazerErrorCode.serviceStartDenied,
-      );
+        expect(controller.current, isA<ErrorState>());
+        expect(
+          (controller.current as ErrorState).error.code,
+          GazerErrorCode.serviceStartDenied,
+        );
 
-      // _reconnecting must be clear again: while it is set, every native
-      // preparing/ready event is swallowed, so a later Go Live would
-      // render no progress at all.
-      bridge.onStateChanged(StateEvent(state: NativePipelineState.ready));
-      await Future<void>.delayed(Duration.zero);
-      expect(controller.current, isA<ReadyState>());
-    });
+        // _reconnecting must be clear again: while it is set, every native
+        // preparing/ready event is swallowed, so a later Go Live would
+        // render no progress at all.
+        bridge.onStateChanged(StateEvent(state: NativePipelineState.ready));
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.current, isA<ReadyState>());
+      },
+    );
 
-    test('a throwing backoff sleep ends in ErrorState and clears the reconnect suppression', () async {
-      await reachReconnecting();
+    test(
+      'a throwing backoff sleep ends in ErrorState and clears the reconnect suppression',
+      () async {
+        await reachReconnecting();
 
-      sleeper.failNext(StateError('backoff timer torn down'));
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+        sleeper.failNext(StateError('backoff timer torn down'));
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-      // Previously this escaped _retryAfter as an unhandled async error
-      // and left _reconnecting true for the process lifetime.
-      expect(controller.current, isA<ErrorState>());
-      expect(
-        (controller.current as ErrorState).error.code,
-        GazerErrorCode.unknown,
-      );
+        // Previously this escaped _retryAfter as an unhandled async error
+        // and left _reconnecting true for the process lifetime.
+        expect(controller.current, isA<ErrorState>());
+        expect(
+          (controller.current as ErrorState).error.code,
+          GazerErrorCode.unknown,
+        );
 
-      bridge.onStateChanged(StateEvent(state: NativePipelineState.ready));
-      await Future<void>.delayed(Duration.zero);
-      expect(controller.current, isA<ReadyState>());
-    });
+        bridge.onStateChanged(StateEvent(state: NativePipelineState.ready));
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.current, isA<ReadyState>());
+      },
+    );
 
-    test('a stale retry unwinding after a fresh goLive leaves the new session reconnecting', () async {
-      await reachReconnecting();
+    test(
+      'a stale retry unwinding after a fresh goLive leaves the new session reconnecting',
+      () async {
+        await reachReconnecting();
 
-      // Stop + Go Live again while the old backoff is still pending:
-      // the stale retry must not clear the *new* session's suppression.
-      await controller.stop();
-      await controller.goLive(
-        settingsWith(),
-        devices: [backCamera],
-        videoDeviceId: 'camera:back',
-        flags: flagsWith(),
-      );
-      bridge.onStateChanged(StateEvent(state: NativePipelineState.streaming));
-      await Future<void>.delayed(Duration.zero);
-      bridge.onStateChanged(
-        StateEvent(
-          state: NativePipelineState.error,
-          error: GazerErrorCode.rtmpConnectFailed,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(controller.current, isA<ReconnectingState>());
+        // Stop + Go Live again while the old backoff is still pending:
+        // the stale retry must not clear the *new* session's suppression.
+        await controller.stop();
+        await controller.goLive(
+          settingsWith(),
+          devices: [backCamera],
+          videoDeviceId: 'camera:back',
+          flags: flagsWith(),
+        );
+        bridge.onStateChanged(StateEvent(state: NativePipelineState.streaming));
+        await Future<void>.delayed(Duration.zero);
+        bridge.onStateChanged(
+          StateEvent(
+            state: NativePipelineState.error,
+            error: GazerErrorCode.rtmpConnectFailed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.current, isA<ReconnectingState>());
 
-      // Resolve the *stale* backoff (index 0) -- it returns early on the
-      // epoch guard and must leave the fresh session's ReconnectingState
-      // intact.
-      sleeper.resolveNext();
-      await Future<void>.delayed(Duration.zero);
-      bridge.onStateChanged(StateEvent(state: NativePipelineState.ready));
-      await Future<void>.delayed(Duration.zero);
-      expect(controller.current, isA<ReconnectingState>());
-    });
+        // Resolve the *stale* backoff (index 0) -- it returns early on the
+        // epoch guard and must leave the fresh session's ReconnectingState
+        // intact.
+        sleeper.resolveNext();
+        await Future<void>.delayed(Duration.zero);
+        bridge.onStateChanged(StateEvent(state: NativePipelineState.ready));
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.current, isA<ReconnectingState>());
+      },
+    );
 
     test(
       'a stale retry that THROWS as it unwinds leaves the fresh session alone',

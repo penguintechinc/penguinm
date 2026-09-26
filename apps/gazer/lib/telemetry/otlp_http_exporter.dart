@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 
 /// One OTLP log record awaiting export.
 typedef OtlpLogRecord = ({
@@ -67,43 +67,31 @@ enum PostResult {
 /// depend on today without either an incomplete/alpha implementation or an
 /// unproven, days-old package -- see the design spec's Observability
 /// section for the packages considered. Deliberately tiny: no
-/// protobuf/gRPC codegen, reuses the already-pinned `dio` dependency, adds
-/// zero new pub.dev packages.
+/// protobuf/gRPC codegen, reuses `package:http`, adds zero new pub.dev
+/// packages.
 class OtlpHttpExporter {
   OtlpHttpExporter({
-    required Dio dio,
-    required String endpoint,
-    required Map<String, String> headers,
-  })
-    // ignore: prefer_initializing_formals
-    : _dio = dio,
-       // ignore: prefer_initializing_formals
-       _endpoint = endpoint,
-       // ignore: prefer_initializing_formals
-       _headers = headers {
-    // Bounded here rather than on the per-request [Options] because Dio
-    // exposes `connectTimeout` on [BaseOptions] only. Left at Dio's default
-    // (`null`) the connect phase waits out the OS TCP timeout -- around two
-    // minutes on Android -- so a black-holed collector holds a POST open far
-    // past the 10s flush interval, which is exactly how overlapping flushes
-    // started.
-    _dio.options.connectTimeout = connectTimeout;
-  }
+    required this._client,
+    required this._endpoint,
+    required this._headers,
+  });
 
-  /// Ceiling on the TCP connect phase of every export POST, matched to the
-  /// send/receive timeouts so no single phase can outlive a flush interval
-  /// by more than a few seconds.
+  /// Ceiling on every export POST (connect + send + receive combined, via
+  /// `Future.timeout`), matched to the flush interval so no single request
+  /// can outlive it by more than a few seconds -- left unbounded, a
+  /// black-holed collector holds a POST open far past the 10s flush
+  /// interval, which is exactly how overlapping flushes started.
   static const Duration connectTimeout = Duration(seconds: 5);
 
-  final Dio _dio;
+  final http.Client _client;
   final String _endpoint;
   final Map<String, String> _headers;
 
-  /// Closes the underlying [Dio] client, aborting any in-flight request.
+  /// Closes the underlying [http.Client], aborting any in-flight request.
   /// Called by `GazerTelemetry.init`/`resetForTest` on the *previous*
   /// exporter whenever telemetry config is reloaded, so a config reload
   /// never leaks the old client's connection pool.
-  void close() => _dio.close(force: true);
+  void close() => _client.close();
 
   /// Builds the OTLP-JSON body via [buildBody] and POSTs it to
   /// `'$_endpoint$path'`. Never throws -- every failure mode (an
@@ -126,19 +114,17 @@ class OtlpHttpExporter {
       return PostResult.encodeFailure;
     }
     try {
-      final Response<dynamic> response = await _dio.post<dynamic>(
-        '$_endpoint$path',
-        data: encoded,
-        options: Options(
-          headers: <String, String>{
-            'Content-Type': 'application/json',
-            ..._headers,
-          },
-          sendTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
-        ),
-      );
-      final int status = response.statusCode ?? 0;
+      final http.Response response = await _client
+          .post(
+            Uri.parse('$_endpoint$path'),
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              ..._headers,
+            },
+            body: encoded,
+          )
+          .timeout(connectTimeout);
+      final int status = response.statusCode;
       return status >= 200 && status < 300
           ? PostResult.success
           : PostResult.transportFailure;
@@ -274,7 +260,8 @@ class OtlpHttpExporter {
           'name': name,
           'sum': <String, Object?>{
             'isMonotonic': true,
-            'aggregationTemporality': 1, // DELTA -- each counter() call is one +1 delta, not a running total
+            'aggregationTemporality':
+                1, // DELTA -- each counter() call is one +1 delta, not a running total
             'dataPoints': _plainDataPoints(group),
           },
         };

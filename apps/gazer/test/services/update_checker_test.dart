@@ -1,36 +1,38 @@
-import 'package:dio/dio.dart';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gazer/services/update_checker.dart';
+import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 
-class _MockDio extends Mock implements Dio {}
+class _MockClient extends Mock implements http.Client {}
 
 void main() {
-  late _MockDio dio;
-
-  setUp(() {
-    dio = _MockDio();
+  setUpAll(() {
+    registerFallbackValue(Uri.parse('https://example.com'));
   });
 
-  Response<List<dynamic>> releasesResponse(
-    List<Map<String, dynamic>> releases,
-  ) => Response<List<dynamic>>(
-    requestOptions: RequestOptions(path: 'releases'),
-    statusCode: 200,
-    data: releases,
-  );
+  late _MockClient client;
+
+  setUp(() {
+    client = _MockClient();
+  });
+
+  http.Response releasesResponse(List<Map<String, dynamic>> releases) =>
+      http.Response(jsonEncode(releases), 200);
 
   group('UpdateChecker.check', () {
     test('a newer gazer-v tag returns UpdateInfo', () async {
-      when(() => dio.get<List<dynamic>>(any())).thenAnswer(
+      when(() => client.get(any())).thenAnswer(
         (_) async => releasesResponse([
           {
             'tag_name': 'gazer-v1.3.0',
-            'html_url': 'https://github.com/penguintechinc/waddlebot/releases/tag/gazer-v1.3.0',
+            'html_url':
+                'https://github.com/penguintechinc/waddlebot/releases/tag/gazer-v1.3.0',
           },
         ]),
       );
-      final checker = UpdateChecker(dio: dio, currentVersion: '1.2.0');
+      final checker = UpdateChecker(client: client, currentVersion: '1.2.0');
 
       final info = await checker.check();
 
@@ -46,7 +48,7 @@ void main() {
     });
 
     test('an equal tag returns null', () async {
-      when(() => dio.get<List<dynamic>>(any())).thenAnswer(
+      when(() => client.get(any())).thenAnswer(
         (_) async => releasesResponse([
           {
             'tag_name': 'gazer-v1.2.0',
@@ -54,13 +56,13 @@ void main() {
           },
         ]),
       );
-      final checker = UpdateChecker(dio: dio, currentVersion: '1.2.0');
+      final checker = UpdateChecker(client: client, currentVersion: '1.2.0');
 
       expect(await checker.check(), isNull);
     });
 
     test('non-gazer tags are ignored', () async {
-      when(() => dio.get<List<dynamic>>(any())).thenAnswer(
+      when(() => client.get(any())).thenAnswer(
         (_) async => releasesResponse([
           {'tag_name': 'v1.9.0', 'html_url': 'https://example.com/v1.9.0'},
           {
@@ -69,38 +71,33 @@ void main() {
           },
         ]),
       );
-      final checker = UpdateChecker(dio: dio, currentVersion: '1.2.0');
+      final checker = UpdateChecker(client: client, currentVersion: '1.2.0');
 
       expect(await checker.check(), isNull);
     });
 
     test('a malformed release list returns null', () async {
-      when(() => dio.get<List<dynamic>>(any())).thenAnswer(
-        (_) async => Response<List<dynamic>>(
-          requestOptions: RequestOptions(path: 'releases'),
-          statusCode: 200,
-          data: 'not-a-list' as List<dynamic>?, // cast to bypass type checker; runtime error caught by try-catch
-        ),
+      when(() => client.get(any())).thenAnswer(
+        // A JSON string, not a list -- the `as List<dynamic>` cast throws,
+        // caught by UpdateChecker.check's try-catch.
+        (_) async => http.Response(jsonEncode('not-a-list'), 200),
       );
-      final checker = UpdateChecker(dio: dio, currentVersion: '1.2.0');
+      final checker = UpdateChecker(client: client, currentVersion: '1.2.0');
 
       expect(await checker.check(), isNull);
     });
 
     test('a network error returns null', () async {
-      when(() => dio.get<List<dynamic>>(any())).thenThrow(
-        DioException(
-          requestOptions: RequestOptions(path: 'releases'),
-          type: DioExceptionType.connectionTimeout,
-        ),
-      );
-      final checker = UpdateChecker(dio: dio, currentVersion: '1.2.0');
+      when(
+        () => client.get(any()),
+      ).thenThrow(http.ClientException('connection timed out'));
+      final checker = UpdateChecker(client: client, currentVersion: '1.2.0');
 
       expect(await checker.check(), isNull);
     });
 
     test('semver compare treats 1.10.0 as newer than 1.9.9', () async {
-      when(() => dio.get<List<dynamic>>(any())).thenAnswer(
+      when(() => client.get(any())).thenAnswer(
         (_) async => releasesResponse([
           {
             'tag_name': 'gazer-v1.10.0',
@@ -108,7 +105,7 @@ void main() {
           },
         ]),
       );
-      final checker = UpdateChecker(dio: dio, currentVersion: '1.9.9');
+      final checker = UpdateChecker(client: client, currentVersion: '1.9.9');
 
       final info = await checker.check();
 

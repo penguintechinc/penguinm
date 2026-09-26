@@ -1,6 +1,3 @@
-import 'dart:typed_data';
-
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // `Override` (the type `ProviderScope.overrides` needs) is not part of
@@ -9,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gazer/l10n/app_localizations.dart';
+import 'package:http/http.dart' as http;
 import 'package:gazer/models/gazer_settings.dart';
 import 'package:gazer/models/license_state.dart';
 import 'package:gazer/models/stream_target_settings.dart';
@@ -249,8 +247,9 @@ void main() {
       'canLaunchUrl true calls launchUrl once and shows no SnackBar',
       (WidgetTester tester) async {
         when(() => urlLauncher.canLaunch(any())).thenAnswer((_) async => true);
-        when(() => urlLauncher.launchUrl(any(), any()))
-            .thenAnswer((_) async => true);
+        when(
+          () => urlLauncher.launchUrl(any(), any()),
+        ).thenAnswer((_) async => true);
         await pumpGazerApp(
           tester,
           overrides: overrides(update: update),
@@ -511,10 +510,10 @@ void main() {
   testWidgets(
     'the telemetry row is live: a failing export flips it with no other rebuild',
     (WidgetTester tester) async {
-      // A Dio whose adapter always fails stands in for an unreachable
+      // An http.Client that always throws stands in for an unreachable
       // collector: no real socket, so this stays inside the widget
       // tester's fake-async zone.
-      final Dio dio = Dio()..httpClientAdapter = _UnreachableAdapter();
+      final http.Client client = _UnreachableClient();
       const TelemetryConfig config = TelemetryConfig(
         endpoint: 'http://collector.invalid:4318',
         protocol: 'http/json',
@@ -529,7 +528,7 @@ void main() {
         tester,
         overrides: overrides(
           telemetry: telemetryConfigProvider.overrideWith((Ref ref) async {
-            GazerTelemetry.init(config, dio: dio);
+            GazerTelemetry.init(config, client: client);
             return config;
           }),
         ),
@@ -541,9 +540,9 @@ void main() {
       // Nothing about the widget tree changes here -- only the telemetry
       // counters do. The row used to read those counters during build(),
       // so it never noticed.
-      // runAsync: the export goes through Dio, which needs real timers --
-      // inside the widget tester's fake-async zone the flush never
-      // completes.
+      // runAsync: the export goes through http.Client, which needs real
+      // timers -- inside the widget tester's fake-async zone the flush
+      // never completes.
       await tester.runAsync(() async {
         GazerTelemetry.recordLog('info', 'test.log', const <String, Object?>{});
         await GazerTelemetry.flush();
@@ -560,16 +559,10 @@ void main() {
   );
 }
 
-/// Dio adapter that fails every request, standing in for an unreachable
+/// http.Client that fails every request, standing in for an unreachable
 /// OTLP collector without opening a socket.
-class _UnreachableAdapter implements HttpClientAdapter {
+class _UnreachableClient extends http.BaseClient {
   @override
-  void close({bool force = false}) {}
-
-  @override
-  Future<ResponseBody> fetch(
-    RequestOptions options,
-    Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async => throw StateError('collector unreachable');
+  Future<http.StreamedResponse> send(http.BaseRequest request) async =>
+      throw StateError('collector unreachable');
 }

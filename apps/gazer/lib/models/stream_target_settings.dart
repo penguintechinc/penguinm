@@ -1,9 +1,4 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
-
 import '../services/gazer_log.dart';
-
-part 'stream_target_settings.freezed.dart';
-part 'stream_target_settings.g.dart';
 
 /// User-supplied RTMP/RTMPS destination: URL, optional stream key, and an
 /// optional both-or-neither username/password pair.
@@ -12,34 +7,92 @@ part 'stream_target_settings.g.dart';
 /// `flutter_secure_storage`, never `shared_preferences`, and it is never
 /// logged. Validation and the key-append/dedupe logic live in
 /// `TargetValidator`, not here.
-@freezed
-abstract class StreamTargetSettings with _$StreamTargetSettings {
-  /// Private constructor (freezed convention) so this class can carry the
-  /// [toString] override below in addition to its generated members.
-  const StreamTargetSettings._();
-
-  const factory StreamTargetSettings({
-    required String url,
-    String? streamKey,
-    String? username,
-    String? password,
-  }) = _StreamTargetSettings;
+///
+/// Hand-written immutable value class (no code generation): const
+/// constructor, value equality, `copyWith`, and manual JSON codec, plus
+/// the redacting [toString] override below.
+class StreamTargetSettings {
+  /// Creates an immutable stream target settings snapshot.
+  const StreamTargetSettings({
+    required this.url,
+    this.streamKey,
+    this.username,
+    this.password,
+  });
 
   /// Deserializes a [StreamTargetSettings] from JSON (round-trip tests only).
   factory StreamTargetSettings.fromJson(Map<String, dynamic> json) =>
-      _$StreamTargetSettingsFromJson(json);
+      StreamTargetSettings(
+        url: json['url'] as String,
+        streamKey: json['streamKey'] as String?,
+        username: json['username'] as String?,
+        password: json['password'] as String?,
+      );
 
   /// Empty target: blank URL, no key, no credentials — the pre-setup state.
   factory StreamTargetSettings.empty() => const StreamTargetSettings(url: '');
 
+  /// RTMP/RTMPS destination URL.
+  final String url;
+
+  /// Optional stream key appended to [url] (or supplied separately).
+  final String? streamKey;
+
+  /// Optional basic-auth username; both-or-neither with [password].
+  final String? username;
+
+  /// Optional basic-auth password; both-or-neither with [username].
+  final String? password;
+
+  /// Serializes this instance to JSON (round-trip tests only).
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'url': url,
+    'streamKey': streamKey,
+    'username': username,
+    'password': password,
+  };
+
+  /// Returns a copy with the given fields replaced.
+  ///
+  /// Nullable fields ([streamKey]/[username]/[password]) use an explicit
+  /// `Object?` sentinel default so a caller can pass `null` to actually
+  /// clear a field rather than leaving it unchanged.
+  StreamTargetSettings copyWith({
+    String? url,
+    Object? streamKey = _unset,
+    Object? username = _unset,
+    Object? password = _unset,
+  }) => StreamTargetSettings(
+    url: url ?? this.url,
+    streamKey: identical(streamKey, _unset)
+        ? this.streamKey
+        : streamKey as String?,
+    username: identical(username, _unset) ? this.username : username as String?,
+    password: identical(password, _unset) ? this.password : password as String?,
+  );
+
+  static const Object _unset = Object();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StreamTargetSettings &&
+          other.url == url &&
+          other.streamKey == streamKey &&
+          other.username == username &&
+          other.password == password);
+
+  @override
+  int get hashCode => Object.hash(url, streamKey, username, password);
+
   /// Redacted string form (R22): this class is logged and nested inside
-  /// [GazerSettings]'s own toString, so the freezed-generated default
-  /// (which prints every field in plaintext) is overridden here. [url]
-  /// keeps its scheme/host/earlier path segments but masks its **last**
-  /// path segment, and drops userinfo/query/fragment; [username] and
-  /// [password] print as `<redacted>`; [streamKey] prints masked with only
-  /// its last 4 characters visible, enough to eyeball "is this the key I
-  /// expect" without exposing it.
+  /// [GazerSettings]'s own toString, so the default field dump (which would
+  /// print every field in plaintext) is overridden here. [url] keeps its
+  /// scheme/host/earlier path segments but masks its **last** path
+  /// segment, and drops userinfo/query/fragment; [username] and [password]
+  /// print as `<redacted>`; [streamKey] prints masked with only its last 4
+  /// characters visible, enough to eyeball "is this the key I expect"
+  /// without exposing it.
   @override
   String toString() {
     return 'StreamTargetSettings(url: $_redactedUrl, streamKey: $_redactedStreamKey, '

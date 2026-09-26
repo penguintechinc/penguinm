@@ -50,8 +50,9 @@ void showStatusPanel(BuildContext context) {
               key: const Key('statusPanelCloseButton'),
               // `tooltip` is what exposes the accessible name here; a
               // wrapping Semantics would announce the same string twice.
-              tooltip: AppLocalizations.of(sheetContext)
-                  .statusPanelCloseButtonLabel,
+              tooltip: AppLocalizations.of(
+                sheetContext,
+              ).statusPanelCloseButtonLabel,
               icon: const Icon(Icons.close),
               onPressed: () => Navigator.of(sheetContext).pop(),
             ),
