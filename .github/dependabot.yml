@@ -1,0 +1,92 @@
+version: 2
+updates:
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+  groups:
+    all-dependencies:
+      applies-to: version-updates
+      patterns:
+      - '*'
+    security:
+      applies-to: security-updates
+      patterns:
+      - '*'
+- package-ecosystem: docker
+  directory: /tooling/docker
+  schedule:
+    interval: weekly
+  groups:
+    all-dependencies:
+      applies-to: version-updates
+      patterns:
+      - '*'
+    security:
+      applies-to: security-updates
+      patterns:
+      - '*'
+- package-ecosystem: pip
+  directory: /tooling/security
+  schedule:
+    interval: weekly
+  groups:
+    all-dependencies:
+      applies-to: version-updates
+      patterns:
+      - '*'
+    security:
+      applies-to: security-updates
+      patterns:
+      - '*'
+- package-ecosystem: pub
+  directories:
+  - /
+  - /apps/gazer
+  - /apps/penguin_reference
+  - /apps/penguincloud
+  - /packages/flutter_libs
+  - /packages/flutter_libs/example
+  - /packages/penguin_api
+  - /packages/penguin_auth
+  - /packages/penguin_core
+  - /packages/penguin_flags
+  - /packages/penguin_lints
+  - /packages/penguin_offline
+  - /packages/penguin_rasp
+  - /packages/penguin_telemetry
+  - /packages/penguin_testing
+  - /packages/penguin_ui
+  - /packages/penguin_update
+  - /shells/penguin_app_shell
+  - /tooling/otlp_sink
+  schedule:
+    interval: weekly
+  groups:
+    all-dependencies:
+      applies-to: version-updates
+      patterns:
+      - '*'
+    security:
+      applies-to: security-updates
+      patterns:
+      - '*'
+- package-ecosystem: gradle
+  directories:
+  - /apps/gazer/android
+  - /apps/gazer/android/app
+  - /apps/penguin_reference/android
+  - /apps/penguin_reference/android/app
+  - /apps/penguincloud/android
+  - /apps/penguincloud/android/app
+  schedule:
+    interval: weekly
+  groups:
+    all-dependencies:
+      applies-to: version-updates
+      patterns:
+      - '*'
+    security:
+      applies-to: security-updates
+      patterns:
+      - '*'
