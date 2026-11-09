@@ -108,7 +108,7 @@ repos:
         name: semgrep --config p/security-audit --config p/kotlin --config p/secrets --error
         # uvx runs the requirements.txt-pinned semgrep isolated (the host global semgrep
         # has a broken opentelemetry-sdk); p/dart is not a real ruleset (404) → p/security-audit.
-        entry: uvx semgrep@1.177.0 --config p/security-audit --config p/kotlin --config p/secrets --error --exclude .superpowers .
+        entry: uvx semgrep@1.179.0 --config p/security-audit --config p/kotlin --config p/secrets --error --exclude .superpowers .
         language: system
         pass_filenames: false
         always_run: true

@@ -1,0 +1,57 @@
+# File-scoped Trivy exceptions (never repo-wide).
+#
+# SUPPRESSION POLICY (owner directive, 2026-09-08): a no-fix or upstream-blocked
+# finding gets a TWO WEEK review-by date (`expired_at: YYYY-MM-DD` and
+# `Review by <date>`), not a multi-month or open-ended one. When re-triaging,
+# re-run `trivy fs` without `--ignorefile` (or after `expired_at`) and verify
+# whether upstream `semgrep` has relaxed its transitive dependency pins before
+# extending.
+#
+# --- 1. semgrep transitive pins in tooling/security/requirements.txt ---------
+# `semgrep` (checked through 1.184.0, latest on PyPI as of 2026-11-09; pinned
+# at 1.179.0 in tooling/security/requirements.in) hard-pins `mcp==1.29.0` and
+# `opentelemetry-api~=1.37.0` (`>=1.37.0,<1.38.0`) in its wheel metadata:
+#   - mcp 1.29.0 carries four MEDIUM advisories (fixed in mcp 1.30.0 / 2.2.0):
+#       CVE-2026-116684 (auth bypass via missing token audience validation)
+#       CVE-2026-116685 (info disclosure via cross-origin HTTP redirects)
+#       CVE-2026-116686 (DoS via schema reference resolution)
+#       CVE-2026-59951  (DoS via session memory exhaustion in streamable HTTP)
+#   - opentelemetry-api 1.37.0 carries one MEDIUM advisory (fixed in 1.45.1):
+#       CVE-2026-114603 (DoS via regex backtracking in header parsing)
+#
+# Bumping either package in `tooling/security/requirements.in` is rejected by
+# `uv pip compile` because every published `semgrep` release through 1.184.0
+# declares `mcp==1.29.0` and `opentelemetry-api~=1.37.0`. Furthermore,
+# `semgrep` is invoked strictly as a local/CI static-analysis CLI
+# (`semgrep --config ... --error .`) — neither the MCP server transport nor
+# OTel header parsing is reachable in this execution path.
+#
+# Added 2026-11-09. Review by 2026-11-23 (exp:2026-11-23) — drop once upstream
+# `semgrep` relaxes its `mcp` (>=1.30.0) and `opentelemetry-api` (>=1.45.1)
+# version constraints.
+vulnerabilities:
+  - id: CVE-2026-116684
+    paths:
+      - "tooling/security/requirements.txt"
+    expired_at: 2026-11-23
+    statement: "mcp==1.29.0 hard-pinned by semgrep through 1.184.0; CLI static-analysis only, MCP server transport unreachable. Review by 2026-11-23 (exp:2026-11-23)."
+  - id: CVE-2026-116685
+    paths:
+      - "tooling/security/requirements.txt"
+    expired_at: 2026-11-23
+    statement: "mcp==1.29.0 hard-pinned by semgrep through 1.184.0; CLI static-analysis only, MCP client redirect handling unreachable. Review by 2026-11-23 (exp:2026-11-23)."
+  - id: CVE-2026-116686
+    paths:
+      - "tooling/security/requirements.txt"
+    expired_at: 2026-11-23
+    statement: "mcp==1.29.0 hard-pinned by semgrep through 1.184.0; CLI static-analysis only, MCP schema resolution unreachable. Review by 2026-11-23 (exp:2026-11-23)."
+  - id: CVE-2026-59951
+    paths:
+      - "tooling/security/requirements.txt"
+    expired_at: 2026-11-23
+    statement: "mcp==1.29.0 hard-pinned by semgrep through 1.184.0; CLI static-analysis only, streamable HTTP session handling unreachable. Review by 2026-11-23 (exp:2026-11-23)."
+  - id: CVE-2026-114603
+    paths:
+      - "tooling/security/requirements.txt"
+    expired_at: 2026-11-23
+    statement: "opentelemetry-api==1.37.0 pinned ~=1.37.0 by semgrep through 1.184.0; CLI static-analysis only, OTel header parsing unreachable. Review by 2026-11-23 (exp:2026-11-23)."

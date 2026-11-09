@@ -66,7 +66,7 @@ test-security: ## gitleaks, trivy, osv-scanner, semgrep, zizmor, hadolint — ev
 	gitleaks detect --redact -v
 	trivy fs --scanners vuln,misconfig,secret --exit-code 1 --skip-dirs .superpowers --skip-dirs "**/coverage" --skip-dirs "**/.dart_tool" --skip-dirs "**/build" .
 	osv-scanner --lockfile pubspec.lock
-	uvx semgrep@1.177.0 --config p/security-audit --config p/kotlin --config p/secrets --error --exclude .superpowers .
+	uvx semgrep@1.179.0 --config p/security-audit --config p/kotlin --config p/secrets --error --exclude .superpowers .
 	zizmor .github/workflows
 	hadolint --config .hadolint.yaml tooling/docker/Dockerfile.flutter-android
 

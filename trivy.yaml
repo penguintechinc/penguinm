@@ -1,0 +1,2 @@
+# Trivy defaults (auto-loaded from repo root): point at the file-scoped YAML ignore list.
+ignorefile: .trivyignore.yaml

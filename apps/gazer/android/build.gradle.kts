@@ -110,10 +110,10 @@ project(":app") {
             // configurations -- confirmed via osv-scanner against android/app/gradle.lockfile, CI
             // run 34487728502) carries two known advisories: GHSA-5mg8-w23w-74h3 and
             // GHSA-7g45-4rm6-3mm3 (both: temp-directory/temp-file creation with default
-            // permissions, insecure on multi-user systems). Both are fixed in 32.0.0-android --
+            // permissions, insecure on multi-user systems). Both are fixed in 32.0.0-android; trivy later flagged 32.0.0-android HIGH (fixed in 33.7.2) so the pin is now 33.7.2-android --
             // force that version everywhere in :app so the shipped classpaths resolve and lock a
             // non-vulnerable guava instead of leaving it to whatever transitive declarer wins.
-            force("com.google.guava:guava:32.0.0-android")
+            force("com.google.guava:guava:33.7.2-android")
         }
     }
     // NOTE: dependencyLocking { lockAllConfigurations() } is deliberately NOT used here (see the
